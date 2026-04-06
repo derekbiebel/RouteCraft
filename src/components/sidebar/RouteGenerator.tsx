@@ -106,8 +106,8 @@ export function RouteGenerator() {
       if (includeViewpoint) searchTypes.push('viewpoint');
       if (includePark) searchTypes.push('park');
 
-      // Search within half the target route distance (so stops are reachable)
-      const searchRadius = Math.max(stopRadius, meters / 3);
+      // Search within half the total route distance (the farthest you'd go out)
+      const searchRadius = Math.max(stopRadius, meters / 2);
       const pois = await findPOIsNearPoint(startPoint, searchTypes, searchRadius);
 
       // Pick one stop per enabled type
@@ -117,7 +117,7 @@ export function RouteGenerator() {
         if (candidates.length > 0) {
           // Pick a candidate that's roughly at the right distance for a detour
           // (not too close to start, not too far)
-          const idealDist = meters / 4; // quarter of total route distance
+          const idealDist = meters / 3; // stops placed roughly a third of the way out
           let best = candidates[0];
           let bestScore = Infinity;
           for (const c of candidates) {
