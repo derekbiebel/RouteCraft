@@ -196,23 +196,28 @@ function detectBikeInfra(
  */
 function scoreSegment(tags: Record<string, string>): SafetySegment {
   const highway = tags.highway || 'unknown';
-  let score = 50;
+  let score = 30; // Start conservative — must earn a good score
 
   // Highway type scoring
-  const safeTypes = ['residential', 'living_street', 'service', 'cycleway', 'path', 'track'];
+  const dedicatedTypes = ['cycleway', 'path', 'track'];
+  const quietTypes = ['residential', 'living_street', 'service'];
   const moderateTypes = ['tertiary', 'tertiary_link', 'unclassified'];
-  const primaryTypes = ['primary', 'primary_link', 'trunk', 'trunk_link'];
+  const busyTypes = ['secondary', 'secondary_link'];
+  const dangerousTypes = ['primary', 'primary_link', 'trunk', 'trunk_link'];
 
-  if (safeTypes.includes(highway)) {
-    score += 30;
+  if (dedicatedTypes.includes(highway)) {
+    score += 50; // Dedicated bike/ped infrastructure
+  } else if (quietTypes.includes(highway)) {
+    score += 20;
   } else if (moderateTypes.includes(highway)) {
-    score += 15;
-  } else if (primaryTypes.includes(highway)) {
-    score -= 20;
+    score += 5;
+  } else if (busyTypes.includes(highway)) {
+    score -= 10;
+  } else if (dangerousTypes.includes(highway)) {
+    score -= 25;
   }
-  // secondary/secondary_link: +0
 
-  // Shoulder
+  // Shoulder — penalize absence on non-quiet roads
   const shoulder = tags.shoulder || '';
   const shoulderWidth = tags['shoulder:width'] || null;
   const hasShoulder =
@@ -223,19 +228,25 @@ function scoreSegment(tags: Record<string, string>): SafetySegment {
     !!shoulderWidth;
 
   if (hasShoulder) {
-    score += 10;
+    score += 15;
     if (shoulderWidth) {
       const widthValue = parseFloat(shoulderWidth);
       if (!isNaN(widthValue) && widthValue >= 1.5) {
         score += 5;
       }
     }
+  } else if (!dedicatedTypes.includes(highway) && !quietTypes.includes(highway)) {
+    // No shoulder on a busy road = bad
+    score -= 10;
   }
 
   // Bike infrastructure
   const { hasBikeLane, bikeInfraType } = detectBikeInfra(tags);
   if (hasBikeLane) {
     score += 20;
+  } else if (!dedicatedTypes.includes(highway) && !quietTypes.includes(highway)) {
+    // No bike lane on a non-quiet road = penalty
+    score -= 5;
   }
 
   // bicycle=designated
@@ -243,22 +254,22 @@ function scoreSegment(tags: Record<string, string>): SafetySegment {
     score += 10;
   }
 
-  // Lanes
+  // Lanes — more lanes = more dangerous
   const lanesStr = tags.lanes || '';
   const lanes = lanesStr ? parseInt(lanesStr, 10) : null;
-  if (lanes !== null && !isNaN(lanes) && lanes >= 4) {
-    score -= 15;
+  if (lanes !== null && !isNaN(lanes)) {
+    if (lanes >= 5) score -= 20;
+    else if (lanes >= 4) score -= 15;
+    else if (lanes >= 3) score -= 5;
   }
 
   // Max speed
   const maxspeedStr = tags.maxspeed || '';
   let maxSpeed: number | null = null;
   if (maxspeedStr) {
-    // Handle formats like "50", "30 mph", "50 km/h"
     const match = maxspeedStr.match(/^(\d+)/);
     if (match) {
       maxSpeed = parseInt(match[1], 10);
-      // Convert mph to km/h if tagged as mph
       if (maxspeedStr.toLowerCase().includes('mph')) {
         maxSpeed = Math.round(maxSpeed * 1.60934);
       }
@@ -266,14 +277,17 @@ function scoreSegment(tags: Record<string, string>): SafetySegment {
   }
 
   if (maxSpeed !== null) {
-    if (maxSpeed > 80) {
-      score -= 20;
-    } else if (maxSpeed > 50) {
-      score -= 10;
-    }
+    if (maxSpeed > 80) score -= 25;
+    else if (maxSpeed > 65) score -= 15;
+    else if (maxSpeed > 50) score -= 10;
+    else if (maxSpeed <= 30) score += 5;
   }
 
-  // Clamp score to 0-100
+  // Sidewalk as fallback indicator of pedestrian-friendly area
+  if (tags.sidewalk && tags.sidewalk !== 'no' && tags.sidewalk !== 'none') {
+    score += 3;
+  }
+
   score = Math.max(0, Math.min(100, score));
 
   return {
@@ -292,9 +306,9 @@ function scoreSegment(tags: Record<string, string>): SafetySegment {
  * Derive the overall label and color from the overall score.
  */
 function labelFromScore(score: number): { label: string; color: string } {
-  if (score >= 80) return { label: 'Excellent', color: '#22c55e' };
-  if (score >= 60) return { label: 'Good', color: '#84cc16' };
-  if (score >= 40) return { label: 'Fair', color: '#f59e0b' };
+  if (score >= 75) return { label: 'Excellent', color: '#22c55e' };
+  if (score >= 55) return { label: 'Good', color: '#84cc16' };
+  if (score >= 35) return { label: 'Fair', color: '#f59e0b' };
   return { label: 'Poor', color: '#ef4444' };
 }
 
