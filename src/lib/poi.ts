@@ -99,6 +99,93 @@ export async function findPOIsAlongRoute(
   return pois;
 }
 
+/**
+ * Search for POIs near a single point within a radius.
+ * Used to find stops BEFORE generating a route.
+ */
+export async function findPOIsNearPoint(
+  center: [number, number], // [lng, lat]
+  types: POIType[],
+  radiusMeters = 3000
+): Promise<POI[]> {
+  if (types.length === 0) return [];
+
+  const bufferDeg = radiusMeters / 111000;
+  const south = center[1] - bufferDeg;
+  const north = center[1] + bufferDeg;
+  const west = center[0] - bufferDeg;
+  const east = center[0] + bufferDeg;
+  const bbox = `${south},${west},${north},${east}`;
+
+  const filters: string[] = [];
+  if (types.includes('brewery')) {
+    filters.push(`node["craft"="brewery"](${bbox});`);
+    filters.push(`node["amenity"="pub"]["microbrewery"="yes"](${bbox});`);
+    filters.push(`node["brewery"](${bbox});`);
+  }
+  if (types.includes('coffee')) {
+    filters.push(`node["amenity"="cafe"](${bbox});`);
+    filters.push(`node["cuisine"="coffee"](${bbox});`);
+  }
+  if (types.includes('viewpoint')) {
+    filters.push(`node["tourism"="viewpoint"](${bbox});`);
+  }
+  if (types.includes('park')) {
+    filters.push(`node["leisure"="park"](${bbox});`);
+    filters.push(`way["leisure"="park"](${bbox});`);
+    filters.push(`relation["boundary"="national_park"](${bbox});`);
+  }
+
+  const query = `[out:json][timeout:10];(${filters.join('')});out body center;`;
+
+  const res = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    body: `data=${encodeURIComponent(query)}`,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+
+  if (!res.ok) return [];
+  const data = await res.json();
+
+  const seen = new Set<string>();
+  const pois: POI[] = [];
+
+  for (const el of data.elements ?? []) {
+    const lat = el.lat ?? el.center?.lat;
+    const lon = el.lon ?? el.center?.lon;
+    if (!lat || !lon) continue;
+    const name = el.tags?.name;
+    if (!name) continue;
+
+    const key = `${name}-${lat.toFixed(3)}-${lon.toFixed(3)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const isBrewer = el.tags?.craft === 'brewery' || el.tags?.microbrewery === 'yes' || el.tags?.brewery;
+    const isViewpoint = el.tags?.tourism === 'viewpoint';
+    const isPark = el.tags?.leisure === 'park' || el.tags?.boundary === 'national_park' || el.tags?.leisure === 'nature_reserve';
+
+    let type: POIType;
+    if (isBrewer) type = 'brewery';
+    else if (isViewpoint) type = 'viewpoint';
+    else if (isPark) type = 'park';
+    else type = 'coffee';
+
+    const dist = haversine(lat, lon, center[1], center[0]);
+    if (dist <= radiusMeters) {
+      pois.push({ id: el.id, name, type, lat, lng: lon });
+    }
+  }
+
+  // Sort by distance from center
+  pois.sort((a, b) =>
+    haversine(a.lat, a.lng, center[1], center[0]) -
+    haversine(b.lat, b.lng, center[1], center[0])
+  );
+
+  return pois;
+}
+
 function isNearRoute(
   lat: number,
   lng: number,

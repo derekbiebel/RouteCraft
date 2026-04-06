@@ -10,7 +10,7 @@ import { generateRoundTrip } from '../map/MapView';
 import { getDirections, getORSProfile } from '../../lib/ors';
 import { fromDisplayDistance, distanceLabel, formatDistance } from '../../lib/units';
 import { CATEGORY_COLORS } from '../../lib/surfaces';
-import { findPOIsAlongRoute, type POI, type POIType } from '../../lib/poi';
+import { findPOIsNearPoint, type POI, type POIType } from '../../lib/poi';
 import { distanceFromTime, estimateSpeedMs, formatSpeed } from '../../lib/speed';
 import maplibregl from 'maplibre-gl';
 
@@ -96,67 +96,56 @@ export function RouteGenerator() {
       ? fromDisplayDistance(targetDistance, units)
       : estimatedDistance;
 
-    const result = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
-    if (!result) return;
-
     const wantStops = includeCoffee || includeBrewery || includeViewpoint || includePark;
 
     if (wantStops) {
-      const allCoords = result.segments.flatMap((seg) => seg.coordinates);
+      // Search for POIs near the start point FIRST, before generating the route
       const searchTypes: POIType[] = [];
       if (includeCoffee) searchTypes.push('coffee');
       if (includeBrewery) searchTypes.push('brewery');
       if (includeViewpoint) searchTypes.push('viewpoint');
       if (includePark) searchTypes.push('park');
 
-      // Search with wider radius first, then narrow down
-      const pois = await findPOIsAlongRoute(allCoords, searchTypes, Math.max(stopRadius, 1500));
+      // Search within half the target route distance (so stops are reachable)
+      const searchRadius = Math.max(stopRadius, meters / 3);
+      const pois = await findPOIsNearPoint(startPoint, searchTypes, searchRadius);
 
-      if (pois.length > 0) {
-        // Pick the best stop for EACH enabled type, spread along the route
-        const enabledTypes = searchTypes;
-        const numTypes = enabledTypes.length;
-        const selectedStops: POI[] = [];
-
-        for (let t = 0; t < numTypes; t++) {
-          const type = enabledTypes[t];
-          const candidates = pois.filter((p) => p.type === type);
-          if (candidates.length === 0) continue;
-
-          // Place each type at a different fraction of the route
-          const fraction = (t + 1) / (numTypes + 1);
-          const targetIdx = Math.floor(allCoords.length * fraction);
-          const targetPoint = allCoords[targetIdx];
-
+      // Pick one stop per enabled type
+      const selectedStops: POI[] = [];
+      for (const type of searchTypes) {
+        const candidates = pois.filter((p) => p.type === type);
+        if (candidates.length > 0) {
+          // Pick a candidate that's roughly at the right distance for a detour
+          // (not too close to start, not too far)
+          const idealDist = meters / 4; // quarter of total route distance
           let best = candidates[0];
-          let bestDist = Infinity;
+          let bestScore = Infinity;
           for (const c of candidates) {
-            const d = Math.hypot(c.lat - targetPoint[1], c.lng - targetPoint[0]);
-            if (d < bestDist) {
-              bestDist = d;
+            const dist = Math.hypot(c.lat - startPoint[1], c.lng - startPoint[0]) * 111000;
+            const score = Math.abs(dist - idealDist);
+            if (score < bestScore) {
+              bestScore = score;
               best = c;
             }
           }
           selectedStops.push(best);
         }
+      }
 
-        if (selectedStops.length === 0) {
-          renderOnMap(result);
-          return;
-        }
+      if (selectedStops.length > 0) {
+        // Build route: start → stops → start (let ORS handle the routing)
+        // Sort stops by angle from start to spread them around the loop
+        const stopsWithAngle = selectedStops.map((s) => ({
+          stop: s,
+          angle: Math.atan2(s.lat - startPoint[1], s.lng - startPoint[0]),
+        }));
+        stopsWithAngle.sort((a, b) => a.angle - b.angle);
+        const orderedStops = stopsWithAngle.map((s) => s.stop);
 
-        // Sort via points by distance from start so route visits them in order
-        const viaStops = selectedStops
-          .map((s) => ({ stop: s, distFromStart: allCoords.findIndex((c) =>
-            Math.hypot(c[1] - s.lat, c[0] - s.lng) < 0.01
-          ) || Math.hypot(s.lat - allCoords[0][1], s.lng - allCoords[0][0]) }))
-          .sort((a, b) => a.distFromStart - b.distFromStart)
-          .map((s) => s.stop);
-
-        const viaPoints: [number, number][] = viaStops.map((s) => [s.lng, s.lat]);
-
+        const viaPoints: [number, number][] = orderedStops.map((s) => [s.lng, s.lat]);
         const profile = getORSProfile(activity, surfacePreference);
         setLoading(true);
+
         try {
           const rerouted = await getDirections(
             [startPoint, ...viaPoints, startPoint],
@@ -170,21 +159,24 @@ export function RouteGenerator() {
             current: maplibregl.Map | null;
           };
           if (mapRef?.current) {
-            const markers = viaStops.map((p) => addStopMarker(p, mapRef.current!));
+            const markers = orderedStops.map((p) => addStopMarker(p, mapRef.current!));
             setStopMarkers(markers);
-            setStops(viaStops);
+            setStops(orderedStops);
           }
         } catch {
-          renderOnMap(result);
+          // Fall back to plain round trip
+          const fallback = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
+          if (fallback) renderOnMap(fallback);
         } finally {
           setLoading(false);
         }
-      } else {
-        renderOnMap(result);
+        return;
       }
-    } else {
-      renderOnMap(result);
     }
+
+    // No stops requested or none found — generate a normal round trip
+    const result = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
+    if (result) renderOnMap(result);
   };
 
   return (
