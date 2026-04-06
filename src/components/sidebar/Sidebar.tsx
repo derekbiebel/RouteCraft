@@ -267,7 +267,7 @@ export function Sidebar() {
                 {stops.map((stop) => {
                   const stopStyles: Record<string, { bg: string; icon: React.ReactNode; label: string }> = {
                     brewery: { bg: 'bg-amber-100 border border-amber-300', icon: <Beer className="size-3.5 text-amber-700" />, label: 'Brewery' },
-                    coffee: { bg: 'bg-purple-100 border border-purple-300', icon: <Coffee className="size-3.5 text-purple-700" />, label: 'Coffee Shop' },
+                    coffee: { bg: 'bg-purple-100 border border-purple-300', icon: <Coffee className="size-3.5 text-purple-700" />, label: 'Coffee & Cafe' },
                     viewpoint: { bg: 'bg-green-100 border border-green-300', icon: <Mountain className="size-3.5 text-green-700" />, label: 'Viewpoint' },
                     park: { bg: 'bg-emerald-100 border border-emerald-300', icon: <Trees className="size-3.5 text-emerald-700" />, label: 'Park' },
                   };

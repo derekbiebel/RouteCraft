@@ -6,7 +6,7 @@ import maplibregl from 'maplibre-gl';
 
 const markerConfig: Record<string, { bg: string; emoji: string; label: string }> = {
   brewery: { bg: '#f59e0b', emoji: '🍺', label: 'Brewery' },
-  coffee: { bg: '#8b5cf6', emoji: '☕', label: 'Coffee Shop' },
+  coffee: { bg: '#8b5cf6', emoji: '☕', label: 'Coffee & Cafe' },
   viewpoint: { bg: '#22c55e', emoji: '🏔️', label: 'Viewpoint' },
   park: { bg: '#10b981', emoji: '🌲', label: 'Park' },
 };
@@ -111,7 +111,7 @@ export function POIFilter() {
           }`}
         >
           <Coffee className="size-4" />
-          Coffee
+          Coffee & Cafes
         </button>
         <button
           onClick={toggleViewpoints}
