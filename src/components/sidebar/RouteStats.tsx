@@ -1,21 +1,21 @@
-import { Ruler, TrendingUp, TrendingDown, Clock, Download } from 'lucide-react';
+import { Ruler, TrendingUp, TrendingDown, Clock, Download, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouteStore } from '../../store/useRouteStore';
 import { usePreferences } from '../../store/usePreferences';
 import { formatDistance, formatElevation, formatDuration } from '../../lib/units';
 import { downloadGPX } from '../../lib/gpx';
+import { estimateSpeedMs, formatSpeed } from '../../lib/speed';
 
 export function RouteStats() {
   const route = useRouteStore((s) => s.route);
-  const { units, activity } = usePreferences();
+  const { units, activity, ftp, weight, thresholdPace } = usePreferences();
 
   if (!route) return null;
 
-  // Estimate time based on activity
-  const estimatedSeconds =
-    activity === 'cycling'
-      ? route.totalDistance / 5.5 // ~20 km/h
-      : route.totalDistance / 2.7; // ~6:10/km pace
+  // Use athlete profile for time estimation (assume endurance IF ~0.70-0.75)
+  const enduranceIF = activity === 'cycling' ? 0.72 : 0.75;
+  const speedMs = estimateSpeedMs(activity, enduranceIF, ftp, weight, thresholdPace);
+  const estimatedSeconds = route.totalDistance / speedMs;
 
   const stats = [
     {
@@ -37,6 +37,11 @@ export function RouteStats() {
       icon: Clock,
       label: 'Est. Time',
       value: formatDuration(estimatedSeconds),
+    },
+    {
+      icon: Zap,
+      label: 'Est. Speed',
+      value: formatSpeed(speedMs, activity, units),
     },
   ];
 
