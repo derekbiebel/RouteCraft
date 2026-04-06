@@ -53,7 +53,7 @@ export function MapView() {
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
           'line-color': '#1e293b',
-          'line-width': 7,
+          'line-width': 9,
           'line-opacity': 0.3,
         },
       });
@@ -65,7 +65,7 @@ export function MapView() {
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
           'line-color': ['get', 'color'],
-          'line-width': 5,
+          'line-width': 6,
         },
       });
     });
@@ -102,7 +102,7 @@ export function MapView() {
             type: 'line',
             source: 'route',
             layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: { 'line-color': '#1e293b', 'line-width': 7, 'line-opacity': 0.3 },
+            paint: { 'line-color': '#1e293b', 'line-width': 9, 'line-opacity': 0.3 },
           });
           map.addLayer({
             id: 'route-surface',

@@ -33,10 +33,10 @@ export function getSurfaceInfo(code: number): SurfaceInfo {
 }
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  paved: '#94a3b8',
-  gravel: '#f59e0b',
-  trail: '#4ade80',
-  road: '#60a5fa',
+  road: '#3b82f6',     // bold blue
+  paved: '#8b5cf6',    // purple — distinct from road
+  gravel: '#f59e0b',   // amber/orange
+  trail: '#16a34a',    // deep green
   unknown: '#a1a1aa',
 };
 

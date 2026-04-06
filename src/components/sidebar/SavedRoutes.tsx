@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Save, Trash2, FolderOpen } from 'lucide-react';
+import { Save, Trash2, FolderOpen, Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
 import { useRouteStore } from '../../store/useRouteStore';
 import { usePreferences } from '../../store/usePreferences';
 import { getSavedRoutes, saveRoute, deleteRoute, type SavedRoute } from '../../lib/storage';
@@ -48,40 +47,45 @@ export function SavedRoutes() {
 
   return (
     <div className="space-y-3">
-      {/* Save current */}
+      <div className="flex items-center gap-2">
+        <Bookmark className="size-4 text-muted-foreground" />
+        <p className="text-xs font-semibold text-foreground">Saved Routes</p>
+      </div>
+
+      {/* Save current route */}
       {route && (
         <>
           {showSave ? (
             <div className="flex gap-2">
               <Input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
                 placeholder="Route name..."
-                className="h-8 text-sm"
-                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+                className="h-9 text-sm"
+                onKeyDown={(e: React.KeyboardEvent) => e.key === 'Enter' && handleSave()}
+                autoFocus
               />
-              <Button size="sm" onClick={handleSave} disabled={!name.trim()}>
-                <Save className="size-3.5" />
+              <Button size="sm" className="h-9" onClick={handleSave} disabled={!name.trim()}>
+                <Save className="size-4" />
               </Button>
             </div>
           ) : (
             <Button
-              variant="outline"
+              variant="default"
               size="sm"
               className="w-full"
               onClick={() => setShowSave(true)}
             >
-              <Save className="size-3.5 mr-1.5" />
-              Save Route
+              <Save className="size-4 mr-1.5" />
+              Save Current Route
             </Button>
           )}
-          <Separator />
         </>
       )}
 
       {/* Saved routes list */}
       {routes.length === 0 ? (
-        <p className="text-xs text-muted-foreground/60 italic py-2 text-center">
+        <p className="text-xs text-muted-foreground/60 italic py-1 text-center">
           No saved routes yet
         </p>
       ) : (

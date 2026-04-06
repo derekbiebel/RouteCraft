@@ -1,6 +1,7 @@
 import { Sidebar } from './components/sidebar/Sidebar';
 import { MapView } from './components/map/MapView';
 import { MapControls } from './components/map/MapControls';
+import { SurfaceLegend } from './components/map/SurfaceLegend';
 import { useIsMobile } from './hooks/use-mobile';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
@@ -15,6 +16,7 @@ export default function App() {
           <MapView />
         </div>
         <MapControls />
+        <SurfaceLegend />
         <Sheet>
           <SheetTrigger>
             <div className="absolute top-4 left-4 z-10 bg-white shadow-lg rounded-lg p-2.5">
@@ -35,6 +37,7 @@ export default function App() {
       <div className="flex-1 relative">
         <MapView />
         <MapControls />
+        <SurfaceLegend />
       </div>
     </div>
   );

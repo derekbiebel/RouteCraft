@@ -8,6 +8,7 @@ import { RouteStats } from './RouteStats';
 import { SavedRoutes } from './SavedRoutes';
 import { ElevationProfile } from '../charts/ElevationProfile';
 import { SurfaceBreakdown } from '../charts/SurfaceBreakdown';
+import { POIFilter } from './POIFilter';
 import { useRouteStore } from '../../store/useRouteStore';
 import { usePreferences } from '../../store/usePreferences';
 import { distanceLabel } from '../../lib/units';
@@ -72,6 +73,8 @@ export function Sidebar() {
             <RouteStats />
             <SurfaceBreakdown breakdown={route.surfaceBreakdown} />
             <ElevationProfile data={route.elevationProfile} />
+            <Separator />
+            <POIFilter />
           </>
         )}
 
