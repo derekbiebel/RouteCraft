@@ -71,6 +71,9 @@ export function MapView() {
     });
 
     map.on('click', (e) => {
+      // Ignore clicks on markers or popups
+      const target = e.originalEvent.target as HTMLElement;
+      if (target.closest('.maplibregl-marker, .maplibregl-popup, .poi-marker')) return;
       addWaypoint([e.lngLat.lng, e.lngLat.lat]);
     });
 
