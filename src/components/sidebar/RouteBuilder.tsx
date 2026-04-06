@@ -56,7 +56,6 @@ export function RouteBuilder() {
           {([
             { key: 'highways' as const, label: 'Busy Roads' },
             { key: 'steps' as const, label: 'Steps/Stairs' },
-            { key: 'ferries' as const, label: 'Ferries' },
           ]).map(({ key, label }) => (
             <button
               key={key}
