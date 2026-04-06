@@ -12,7 +12,7 @@ import { findPOIsAlongRoute, type POI } from '../../lib/poi';
 import maplibregl from 'maplibre-gl';
 
 export function RouteGenerator() {
-  const { waypoints, isLoading, roundTripSeed, newSeed, setRoute, setLoading } = useRouteStore();
+  const { waypoints, isLoading, roundTripSeed, newSeed, setRoute, setLoading, setStops } = useRouteStore();
   const { activity, setActivity, surfacePreference, setSurfacePreference, units } = usePreferences();
   const [targetDistance, setTargetDistance] = useState(5);
   const [includeCoffee, setIncludeCoffee] = useState(false);
@@ -66,6 +66,7 @@ export function RouteGenerator() {
   const handleGenerate = async (seed?: number) => {
     if (!startPoint) return;
     clearStopMarkers();
+    setStops([]);
 
     const meters = fromDisplayDistance(targetDistance, units);
     const result = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed);
@@ -148,10 +149,10 @@ export function RouteGenerator() {
             current: maplibregl.Map | null;
           };
           if (mapRef?.current) {
-            const markers = [bestPoi, ...(secondPoi ? [secondPoi] : [])].map((p) =>
-              addStopMarker(p, mapRef.current!)
-            );
+            const allStops = [bestPoi, ...(secondPoi ? [secondPoi] : [])];
+            const markers = allStops.map((p) => addStopMarker(p, mapRef.current!));
             setStopMarkers(markers);
+            setStops(allStops);
           }
         } catch {
           renderOnMap(result);

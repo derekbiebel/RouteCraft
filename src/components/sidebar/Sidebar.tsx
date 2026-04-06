@@ -1,4 +1,4 @@
-import { Compass } from 'lucide-react';
+import { Compass, Coffee, Beer } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { SearchBar } from './SearchBar';
@@ -14,7 +14,7 @@ import { usePreferences } from '../../store/usePreferences';
 import { distanceLabel } from '../../lib/units';
 
 export function Sidebar() {
-  const { route, isLoading, error } = useRouteStore();
+  const { route, stops, isLoading, error } = useRouteStore();
   const units = usePreferences((s) => s.units);
   const setUnits = usePreferences((s) => s.setUnits);
 
@@ -66,11 +66,47 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* Route info */}
+        {/* Route results */}
         {route && (
           <>
             <Separator />
             <RouteStats />
+
+            {/* Stops along route */}
+            {stops.length > 0 && (
+              <div className="bg-secondary/50 rounded-lg p-3 space-y-2">
+                <p className="text-xs font-semibold text-foreground">Stops on This Route</p>
+                {stops.map((stop) => (
+                  <div
+                    key={stop.id}
+                    className="flex items-center gap-2.5"
+                  >
+                    <div
+                      className={`flex items-center justify-center size-7 rounded-full text-sm ${
+                        stop.type === 'brewery'
+                          ? 'bg-amber-100 border border-amber-300'
+                          : 'bg-purple-100 border border-purple-300'
+                      }`}
+                    >
+                      {stop.type === 'brewery' ? (
+                        <Beer className="size-3.5 text-amber-700" />
+                      ) : (
+                        <Coffee className="size-3.5 text-purple-700" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{stop.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {stop.type === 'brewery' ? 'Brewery' : 'Coffee Shop'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <SavedRoutes />
+            <Separator />
             <SurfaceBreakdown breakdown={route.surfaceBreakdown} />
             <ElevationProfile data={route.elevationProfile} />
             <Separator />
@@ -78,8 +114,12 @@ export function Sidebar() {
           </>
         )}
 
-        <Separator />
-        <SavedRoutes />
+        {!route && (
+          <>
+            <Separator />
+            <SavedRoutes />
+          </>
+        )}
       </div>
     </div>
   );

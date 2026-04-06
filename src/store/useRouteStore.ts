@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import type { RouteResult } from '../lib/ors';
+import type { POI } from '../lib/poi';
 
 interface RouteState {
   waypoints: [number, number][];
   route: RouteResult | null;
+  stops: POI[];
   isLoading: boolean;
   error: string | null;
   roundTripSeed: number;
@@ -14,6 +16,7 @@ interface RouteState {
   setWaypoints: (waypoints: [number, number][]) => void;
   clearRoute: () => void;
   setRoute: (route: RouteResult) => void;
+  setStops: (stops: POI[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   newSeed: () => void;
@@ -22,6 +25,7 @@ interface RouteState {
 export const useRouteStore = create<RouteState>((set) => ({
   waypoints: [],
   route: null,
+  stops: [],
   isLoading: false,
   error: null,
   roundTripSeed: Math.floor(Math.random() * 100),
@@ -35,8 +39,9 @@ export const useRouteStore = create<RouteState>((set) => ({
       waypoints: s.waypoints.map((w, i) => (i === index ? lngLat : w)),
     })),
   setWaypoints: (waypoints) => set({ waypoints }),
-  clearRoute: () => set({ waypoints: [], route: null, error: null }),
+  clearRoute: () => set({ waypoints: [], route: null, stops: [], error: null }),
   setRoute: (route) => set({ route, error: null }),
+  setStops: (stops) => set({ stops }),
   setLoading: (loading) => set({ isLoading: loading }),
   setError: (error) => set({ error, isLoading: false }),
   newSeed: () => set({ roundTripSeed: Math.floor(Math.random() * 100) }),
