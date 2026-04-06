@@ -95,7 +95,9 @@ export function RouteGenerator() {
 
     setSearchingPois(true);
     const meters = mode === 'distance' ? fromDisplayDistance(targetDistance, units) : estimatedDistance || 10000;
-    const searchRadius = Math.max(stopRadius, meters / 2);
+    // Minimum 10km (~6mi) search radius so nearby favorites always show up,
+    // or half the ride distance, whichever is larger
+    const searchRadius = Math.max(10000, stopRadius, meters / 2);
 
     try {
       const pois = await findPOIsNearPoint(startPoint, types, searchRadius);
