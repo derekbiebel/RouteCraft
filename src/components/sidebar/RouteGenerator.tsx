@@ -6,6 +6,7 @@ import { useRouteStore } from '../../store/useRouteStore';
 import { usePreferences } from '../../store/usePreferences';
 import { generateRoundTrip } from '../map/MapView';
 import { fromDisplayDistance, distanceLabel } from '../../lib/units';
+import { CATEGORY_COLORS } from '../../lib/surfaces';
 
 export function RouteGenerator() {
   const { waypoints, isLoading, roundTripSeed, newSeed } = useRouteStore();
@@ -20,11 +21,10 @@ export function RouteGenerator() {
     const result = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed);
     if (result) {
       // Render on map
-      const mapRef = (window as Record<string, unknown>).__routecraftMap as React.RefObject<{ getSource: (id: string) => { setData: (data: unknown) => void } | undefined; fitBounds: (bounds: [[number, number], [number, number]], opts: unknown) => void }>;
+      const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as React.RefObject<{ getSource: (id: string) => { setData: (data: unknown) => void } | undefined; fitBounds: (bounds: [[number, number], [number, number]], opts: unknown) => void }>;
       if (mapRef?.current) {
         const source = mapRef.current.getSource('route') as { setData: (data: unknown) => void } | undefined;
         if (source) {
-          const { CATEGORY_COLORS } = await import('../../lib/surfaces');
           const features = result.segments.map((seg) => ({
             type: 'Feature' as const,
             properties: { color: CATEGORY_COLORS[seg.surface.category] ?? '#a1a1aa' },
@@ -95,7 +95,7 @@ export function RouteGenerator() {
         </div>
         <Slider
           value={[targetDistance]}
-          onValueChange={([v]) => setTargetDistance(v)}
+          onValueChange={(val) => setTargetDistance(Array.isArray(val) ? val[0] : val)}
           min={1}
           max={activity === 'cycling' ? 100 : 30}
           step={0.5}

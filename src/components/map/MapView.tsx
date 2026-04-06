@@ -1,21 +1,20 @@
 import { useEffect, useRef, useCallback } from 'react';
-import mapboxgl from 'mapbox-gl';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { useRouteStore } from '../../store/useRouteStore';
 import { usePreferences } from '../../store/usePreferences';
 import { getDirections, getRoundTrip, getORSProfile } from '../../lib/ors';
 import { CATEGORY_COLORS } from '../../lib/surfaces';
 
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN as string;
-
 const STYLE_URLS: Record<string, string> = {
-  streets: 'mapbox://styles/mapbox/streets-v12',
-  outdoors: 'mapbox://styles/mapbox/outdoors-v12',
+  streets: 'https://tiles.openfreemap.org/styles/liberty',
+  outdoors: 'https://tiles.openfreemap.org/styles/positron',
 };
 
 export function MapView() {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const markersRef = useRef<maplibregl.Marker[]>([]);
   const mapStyle = usePreferences((s) => s.mapStyle);
   const activity = usePreferences((s) => s.activity);
   const surfacePref = usePreferences((s) => s.surfacePreference);
@@ -25,16 +24,16 @@ export function MapView() {
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
 
-    const map = new mapboxgl.Map({
+    const map = new maplibregl.Map({
       container: mapContainer.current,
       style: STYLE_URLS[mapStyle],
       center: [-104.99, 39.74], // Denver default
       zoom: 12,
     });
 
-    map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
+    map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
     map.addControl(
-      new mapboxgl.GeolocateControl({
+      new maplibregl.GeolocateControl({
         positionOptions: { enableHighAccuracy: true },
         trackUserLocation: false,
       }),
@@ -42,13 +41,11 @@ export function MapView() {
     );
 
     map.on('load', () => {
-      // Add route source + layers
       map.addSource('route', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
 
-      // Route outline
       map.addLayer({
         id: 'route-outline',
         type: 'line',
@@ -61,7 +58,6 @@ export function MapView() {
         },
       });
 
-      // Route surface-colored layer
       map.addLayer({
         id: 'route-surface',
         type: 'line',
@@ -74,7 +70,6 @@ export function MapView() {
       });
     });
 
-    // Click to add waypoint
     map.on('click', (e) => {
       addWaypoint([e.lngLat.lng, e.lngLat.lat]);
     });
@@ -94,30 +89,31 @@ export function MapView() {
     if (!map) return;
     map.setStyle(STYLE_URLS[mapStyle]);
 
-    // Re-add source/layers after style change
-    map.once('style.load', () => {
-      if (!map.getSource('route')) {
-        map.addSource('route', {
-          type: 'geojson',
-          data: { type: 'FeatureCollection', features: [] },
-        });
-        map.addLayer({
-          id: 'route-outline',
-          type: 'line',
-          source: 'route',
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': '#1e293b', 'line-width': 7, 'line-opacity': 0.3 },
-        });
-        map.addLayer({
-          id: 'route-surface',
-          type: 'line',
-          source: 'route',
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': ['get', 'color'], 'line-width': 5 },
-        });
-      }
-      // Re-render route if exists
-      if (route) renderRoute(route);
+    map.once('styledata', () => {
+      // Small delay to let style fully load
+      setTimeout(() => {
+        if (!map.getSource('route')) {
+          map.addSource('route', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] },
+          });
+          map.addLayer({
+            id: 'route-outline',
+            type: 'line',
+            source: 'route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 'line-color': '#1e293b', 'line-width': 7, 'line-opacity': 0.3 },
+          });
+          map.addLayer({
+            id: 'route-surface',
+            type: 'line',
+            source: 'route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 'line-color': ['get', 'color'], 'line-width': 5 },
+          });
+        }
+        if (route) renderRoute(route);
+      }, 100);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapStyle]);
@@ -128,7 +124,7 @@ export function MapView() {
       const map = mapRef.current;
       if (!map || !routeResult) return;
 
-      const source = map.getSource('route') as mapboxgl.GeoJSONSource | undefined;
+      const source = map.getSource('route') as maplibregl.GeoJSONSource | undefined;
       if (!source) return;
 
       const features = routeResult.segments.map((seg) => ({
@@ -144,7 +140,6 @@ export function MapView() {
 
       source.setData({ type: 'FeatureCollection', features });
 
-      // Fit bounds
       if (routeResult.bbox) {
         const [minLng, minLat, maxLng, maxLat] = routeResult.bbox;
         map.fitBounds(
@@ -161,7 +156,6 @@ export function MapView() {
 
   // Update markers when waypoints change
   useEffect(() => {
-    // Clear old markers
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
 
@@ -173,7 +167,7 @@ export function MapView() {
       const isEnd = i === waypoints.length - 1 && waypoints.length > 1;
       const color = isStart ? '#22c55e' : isEnd ? '#ef4444' : '#3b82f6';
 
-      const marker = new mapboxgl.Marker({ color, draggable: true })
+      const marker = new maplibregl.Marker({ color, draggable: true })
         .setLngLat(wp)
         .addTo(map);
 
@@ -189,9 +183,8 @@ export function MapView() {
   // Fetch route when waypoints change (2+ waypoints)
   useEffect(() => {
     if (waypoints.length < 2) {
-      // Clear route if less than 2 points
       if (route) {
-        const source = mapRef.current?.getSource('route') as mapboxgl.GeoJSONSource | undefined;
+        const source = mapRef.current?.getSource('route') as maplibregl.GeoJSONSource | undefined;
         source?.setData({ type: 'FeatureCollection', features: [] });
         useRouteStore.getState().setRoute(null as unknown as Parameters<typeof setRoute>[0]);
       }
@@ -215,9 +208,9 @@ export function MapView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waypoints, activity, surfacePref]);
 
-  // Expose flyTo for search
+  // Expose map ref for search
   useEffect(() => {
-    (window as Record<string, unknown>).__routecraftMap = mapRef;
+    (window as unknown as Record<string, unknown>).__routecraftMap = mapRef;
   }, []);
 
   return (

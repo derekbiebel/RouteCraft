@@ -1,18 +1,22 @@
 import { useState, useRef } from 'react';
 import { Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import mapboxgl from 'mapbox-gl';
+
+interface MapRef {
+  current: { flyTo: (opts: { center: [number, number]; zoom: number; duration: number }) => void } | null;
+}
 
 interface SearchResult {
-  place_name: string;
-  center: [number, number];
+  display_name: string;
+  lon: string;
+  lat: string;
 }
 
 export function SearchBar() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const search = (q: string) => {
     setQuery(q);
@@ -26,28 +30,31 @@ export function SearchBar() {
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const token = import.meta.env.VITE_MAPBOX_TOKEN;
         const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${token}&limit=5`
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`,
+          { headers: { 'Accept-Language': 'en' } }
         );
-        const data = await res.json();
-        setResults(data.features ?? []);
+        const data: SearchResult[] = await res.json();
+        setResults(data);
         setIsOpen(true);
       } catch {
         setResults([]);
       }
-    }, 300);
+    }, 400);
   };
 
   const select = (result: SearchResult) => {
-    setQuery(result.place_name.split(',')[0]);
+    setQuery(result.display_name.split(',')[0]);
     setResults([]);
     setIsOpen(false);
 
-    // Fly map to location
-    const mapRef = (window as Record<string, unknown>).__routecraftMap as React.RefObject<mapboxgl.Map>;
+    const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as MapRef;
     if (mapRef?.current) {
-      mapRef.current.flyTo({ center: result.center, zoom: 14, duration: 1500 });
+      mapRef.current.flyTo({
+        center: [parseFloat(result.lon), parseFloat(result.lat)],
+        zoom: 14,
+        duration: 1500,
+      });
     }
   };
 
@@ -57,7 +64,7 @@ export function SearchBar() {
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input
           value={query}
-          onChange={(e) => search(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => search(e.target.value)}
           placeholder="Search location..."
           className="pl-9 pr-8 h-9 text-sm"
         />
@@ -79,7 +86,7 @@ export function SearchBar() {
               onClick={() => select(r)}
               className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors truncate"
             >
-              {r.place_name}
+              {r.display_name}
             </button>
           ))}
         </div>

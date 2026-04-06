@@ -16,10 +16,10 @@ export default function App() {
         </div>
         <MapControls />
         <Sheet>
-          <SheetTrigger asChild>
-            <button className="absolute top-4 left-4 z-10 bg-white shadow-lg rounded-lg p-2.5">
+          <SheetTrigger>
+            <div className="absolute top-4 left-4 z-10 bg-white shadow-lg rounded-lg p-2.5">
               <Menu className="size-5 text-gray-700" />
-            </button>
+            </div>
           </SheetTrigger>
           <SheetContent side="left" className="p-0 w-80">
             <Sidebar />
