@@ -20,7 +20,7 @@ export function RouteGenerator() {
   const { waypoints, isLoading, roundTripSeed, newSeed, setRoute, setLoading, setStops } = useRouteStore();
   const prefs = usePreferences();
   const { activity, setActivity, surfacePreference, setSurfacePreference, units,
-          avoidances, setAvoidances, ftp, weight, thresholdPace } = prefs;
+          avoidances, setAvoidances, ftp, weight, thresholdPace, preferBikeLanes, setPreferBikeLanes } = prefs;
 
   const [mode, setMode] = useState<GenerateMode>('distance');
   const [targetDistance, setTargetDistance] = useState(5);
@@ -31,13 +31,23 @@ export function RouteGenerator() {
   const [includeViewpoint, setIncludeViewpoint] = useState(false);
   const [includePark, setIncludePark] = useState(false);
   const [stopRadius, setStopRadius] = useState(800);
-  const [stopMarkers, setStopMarkers] = useState<maplibregl.Marker[]>([]);
+  const [previewMarkers, setPreviewMarkers] = useState<maplibregl.Marker[]>([]);
+  const [routeStopMarkers, setRouteStopMarkers] = useState<maplibregl.Marker[]>([]);
+  const [availablePois, setAvailablePois] = useState<POI[]>([]);
+  const [selectedStopIds, setSelectedStopIds] = useState<Set<number>>(new Set());
+  const [searchingPois, setSearchingPois] = useState(false);
 
   const startPoint = waypoints[0] ?? null;
 
-  // Calculate estimated values for time mode
   const estimatedSpeed = estimateSpeedMs(activity, intensityFactor, ftp, weight, thresholdPace);
   const estimatedDistance = mode === 'time' ? distanceFromTime(targetTime, activity, intensityFactor, ftp, weight, thresholdPace) : 0;
+
+  const markerConfig: Record<string, { bg: string; emoji: string; label: string }> = {
+    brewery: { bg: '#f59e0b', emoji: '🍺', label: 'Brewery' },
+    coffee: { bg: '#8b5cf6', emoji: '☕', label: 'Coffee Shop' },
+    viewpoint: { bg: '#22c55e', emoji: '🏔️', label: 'Viewpoint' },
+    park: { bg: '#10b981', emoji: '🌲', label: 'Park' },
+  };
 
   const renderOnMap = (result: { segments: { coordinates: [number, number, number][]; surface: { category: string } }[]; bbox: [number, number, number, number] }) => {
     const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
@@ -63,118 +73,172 @@ export function RouteGenerator() {
     }
   };
 
-  const clearStopMarkers = () => {
-    stopMarkers.forEach((m) => m.remove());
-    setStopMarkers([]);
+  const clearPreviewMarkers = () => {
+    previewMarkers.forEach((m) => m.remove());
+    setPreviewMarkers([]);
   };
 
-  const addStopMarker = (poi: POI, map: maplibregl.Map): maplibregl.Marker => {
-    const markerConfig: Record<string, { bg: string; emoji: string; label: string }> = {
-      brewery: { bg: '#f59e0b', emoji: '🍺', label: 'Brewery' },
-      coffee: { bg: '#8b5cf6', emoji: '☕', label: 'Coffee Shop' },
-      viewpoint: { bg: '#22c55e', emoji: '🏔️', label: 'Viewpoint' },
-      park: { bg: '#10b981', emoji: '🌲', label: 'Park' },
-    };
-    const config = markerConfig[poi.type] ?? markerConfig.coffee;
-    const el = document.createElement('div');
-    el.innerHTML = `<div style="background:${config.bg};border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);font-size:16px">${config.emoji}</div>`;
-    return new maplibregl.Marker({ element: el })
-      .setLngLat([poi.lng, poi.lat])
-      .setPopup(new maplibregl.Popup({ offset: 18 }).setHTML(
-        `<div style="font-family:DM Sans,sans-serif;padding:2px 0"><strong style="font-size:13px">${poi.name}</strong><br/><span style="font-size:11px;color:#666">${config.label}</span></div>`
-      ))
-      .addTo(map);
+  const clearRouteStopMarkers = () => {
+    routeStopMarkers.forEach((m) => m.remove());
+    setRouteStopMarkers([]);
+  };
+
+  // Show POI options on the map when stop types are toggled
+  const searchAndShowPois = async (types: POIType[]) => {
+    clearPreviewMarkers();
+    setAvailablePois([]);
+    setSelectedStopIds(new Set());
+
+    if (!startPoint || types.length === 0) return;
+
+    setSearchingPois(true);
+    const meters = mode === 'distance' ? fromDisplayDistance(targetDistance, units) : estimatedDistance || 10000;
+    const searchRadius = Math.max(stopRadius, meters / 2);
+
+    try {
+      const pois = await findPOIsNearPoint(startPoint, types, searchRadius);
+      setAvailablePois(pois);
+
+      const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
+        current: maplibregl.Map | null;
+      };
+      if (!mapRef?.current) return;
+
+      const markers = pois.map((poi) => {
+        const config = markerConfig[poi.type] ?? markerConfig.coffee;
+        const el = document.createElement('div');
+        el.className = 'poi-marker';
+        el.style.cursor = 'pointer';
+        el.innerHTML = `<div class="poi-preview-${poi.id}" style="background:${config.bg};opacity:0.5;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px;transition:all 0.2s">${config.emoji}</div>`;
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([poi.lng, poi.lat])
+          .setPopup(new maplibregl.Popup({ offset: 16, closeOnClick: false }).setHTML(
+            `<div style="font-family:DM Sans,sans-serif;padding:2px 0">
+              <strong style="font-size:13px">${poi.name}</strong><br/>
+              <span style="font-size:11px;color:#666">${config.label}</span><br/>
+              <span style="font-size:10px;color:#999">Click marker to add to route</span>
+            </div>`
+          ))
+          .addTo(mapRef.current!);
+
+        // Click to select/deselect
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setSelectedStopIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(poi.id)) {
+              next.delete(poi.id);
+              el.querySelector('div')!.style.opacity = '0.5';
+              el.querySelector('div')!.style.width = '28px';
+              el.querySelector('div')!.style.height = '28px';
+              el.querySelector('div')!.style.fontSize = '14px';
+              el.querySelector('div')!.style.border = '2px solid white';
+            } else {
+              next.add(poi.id);
+              el.querySelector('div')!.style.opacity = '1';
+              el.querySelector('div')!.style.width = '36px';
+              el.querySelector('div')!.style.height = '36px';
+              el.querySelector('div')!.style.fontSize = '18px';
+              el.querySelector('div')!.style.border = '3px solid #22c55e';
+            }
+            return next;
+          });
+        });
+
+        return marker;
+      });
+
+      setPreviewMarkers(markers);
+    } catch {
+      // silently fail
+    } finally {
+      setSearchingPois(false);
+    }
+  };
+
+  // Trigger search when stop types change
+  const handleToggleStop = (type: POIType, current: boolean, setter: (v: boolean) => void) => {
+    const next = !current;
+    setter(next);
+
+    // Build new types list
+    const types: POIType[] = [];
+    if (type === 'coffee' ? next : includeCoffee) types.push('coffee');
+    if (type === 'brewery' ? next : includeBrewery) types.push('brewery');
+    if (type === 'viewpoint' ? next : includeViewpoint) types.push('viewpoint');
+    if (type === 'park' ? next : includePark) types.push('park');
+
+    searchAndShowPois(types);
   };
 
   const handleGenerate = async (seed?: number) => {
     if (!startPoint) return;
-    clearStopMarkers();
+    clearRouteStopMarkers();
     setStops([]);
 
-    // Calculate distance
     const meters = mode === 'distance'
       ? fromDisplayDistance(targetDistance, units)
       : estimatedDistance;
 
-    const wantStops = includeCoffee || includeBrewery || includeViewpoint || includePark;
+    // Use user-selected stops if any
+    const userSelectedStops = availablePois.filter((p) => selectedStopIds.has(p.id));
 
-    if (wantStops) {
-      // Search for POIs near the start point FIRST, before generating the route
-      const searchTypes: POIType[] = [];
-      if (includeCoffee) searchTypes.push('coffee');
-      if (includeBrewery) searchTypes.push('brewery');
-      if (includeViewpoint) searchTypes.push('viewpoint');
-      if (includePark) searchTypes.push('park');
+    if (userSelectedStops.length > 0) {
+      // Clear preview markers since we'll show route stop markers
+      clearPreviewMarkers();
 
-      // Search within half the total route distance (the farthest you'd go out)
-      const searchRadius = Math.max(stopRadius, meters / 2);
-      const pois = await findPOIsNearPoint(startPoint, searchTypes, searchRadius);
+      // Sort by angle from start for a logical loop
+      const stopsWithAngle = userSelectedStops.map((s) => ({
+        stop: s,
+        angle: Math.atan2(s.lat - startPoint[1], s.lng - startPoint[0]),
+      }));
+      stopsWithAngle.sort((a, b) => a.angle - b.angle);
+      const orderedStops = stopsWithAngle.map((s) => s.stop);
 
-      // Pick one stop per enabled type
-      const selectedStops: POI[] = [];
-      for (const type of searchTypes) {
-        const candidates = pois.filter((p) => p.type === type);
-        if (candidates.length > 0) {
-          // Pick a candidate that's roughly at the right distance for a detour
-          // (not too close to start, not too far)
-          const idealDist = meters / 3; // stops placed roughly a third of the way out
-          let best = candidates[0];
-          let bestScore = Infinity;
-          for (const c of candidates) {
-            const dist = Math.hypot(c.lat - startPoint[1], c.lng - startPoint[0]) * 111000;
-            const score = Math.abs(dist - idealDist);
-            if (score < bestScore) {
-              bestScore = score;
-              best = c;
-            }
-          }
-          selectedStops.push(best);
+      const viaPoints: [number, number][] = orderedStops.map((s) => [s.lng, s.lat]);
+      const profile = getORSProfile(activity, surfacePreference, preferBikeLanes);
+      setLoading(true);
+
+      try {
+        const rerouted = await getDirections(
+          [startPoint, ...viaPoints, startPoint],
+          profile,
+          avoidances
+        );
+        setRoute(rerouted);
+        renderOnMap(rerouted);
+
+        const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
+          current: maplibregl.Map | null;
+        };
+        if (mapRef?.current) {
+          const markers = orderedStops.map((p) => {
+            const config = markerConfig[p.type] ?? markerConfig.coffee;
+            const el = document.createElement('div');
+            el.className = 'poi-marker';
+            el.innerHTML = `<div style="background:${config.bg};border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:3px solid #22c55e;box-shadow:0 2px 6px rgba(0,0,0,0.3);font-size:16px">${config.emoji}</div>`;
+            return new maplibregl.Marker({ element: el })
+              .setLngLat([p.lng, p.lat])
+              .setPopup(new maplibregl.Popup({ offset: 18 }).setHTML(
+                `<div style="font-family:DM Sans,sans-serif;padding:2px 0"><strong style="font-size:13px">${p.name}</strong><br/><span style="font-size:11px;color:#666">${config.label}</span></div>`
+              ))
+              .addTo(mapRef.current!);
+          });
+          setRouteStopMarkers(markers);
+          setStops(orderedStops);
         }
+      } catch {
+        const fallback = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
+        if (fallback) renderOnMap(fallback);
+      } finally {
+        setLoading(false);
       }
-
-      if (selectedStops.length > 0) {
-        // Build route: start → stops → start (let ORS handle the routing)
-        // Sort stops by angle from start to spread them around the loop
-        const stopsWithAngle = selectedStops.map((s) => ({
-          stop: s,
-          angle: Math.atan2(s.lat - startPoint[1], s.lng - startPoint[0]),
-        }));
-        stopsWithAngle.sort((a, b) => a.angle - b.angle);
-        const orderedStops = stopsWithAngle.map((s) => s.stop);
-
-        const viaPoints: [number, number][] = orderedStops.map((s) => [s.lng, s.lat]);
-        const profile = getORSProfile(activity, surfacePreference);
-        setLoading(true);
-
-        try {
-          const rerouted = await getDirections(
-            [startPoint, ...viaPoints, startPoint],
-            profile,
-            avoidances
-          );
-          setRoute(rerouted);
-          renderOnMap(rerouted);
-
-          const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
-            current: maplibregl.Map | null;
-          };
-          if (mapRef?.current) {
-            const markers = orderedStops.map((p) => addStopMarker(p, mapRef.current!));
-            setStopMarkers(markers);
-            setStops(orderedStops);
-          }
-        } catch {
-          // Fall back to plain round trip
-          const fallback = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
-          if (fallback) renderOnMap(fallback);
-        } finally {
-          setLoading(false);
-        }
-        return;
-      }
+      return;
     }
 
-    // No stops requested or none found — generate a normal round trip
+    // No stops selected — generate a normal round trip
+    clearPreviewMarkers();
     const result = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
     if (result) renderOnMap(result);
   };
@@ -220,6 +284,22 @@ export function RouteGenerator() {
           ))}
         </div>
       </div>
+
+      {/* Bike lane preference */}
+      {activity === 'cycling' && (
+        <div>
+          <button
+            onClick={() => setPreferBikeLanes(!preferBikeLanes)}
+            className={`flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              preferBikeLanes
+                ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                : 'bg-secondary text-secondary-foreground hover:bg-accent'
+            }`}
+          >
+            🚲 Prefer Bike Lanes & Paths
+          </button>
+        </div>
+      )}
 
       {/* Avoidances */}
       <div>
@@ -388,7 +468,7 @@ export function RouteGenerator() {
         <p className="text-xs font-medium text-muted-foreground">Include Stops</p>
         <div className="grid grid-cols-2 gap-1.5">
           <button
-            onClick={() => setIncludeCoffee(!includeCoffee)}
+            onClick={() => handleToggleStop('coffee', includeCoffee, setIncludeCoffee)}
             className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
               includeCoffee
                 ? 'bg-purple-100 text-purple-800 border border-purple-300'
@@ -399,7 +479,7 @@ export function RouteGenerator() {
             Coffee
           </button>
           <button
-            onClick={() => setIncludeBrewery(!includeBrewery)}
+            onClick={() => handleToggleStop('brewery', includeBrewery, setIncludeBrewery)}
             className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
               includeBrewery
                 ? 'bg-amber-100 text-amber-800 border border-amber-300'
@@ -410,7 +490,7 @@ export function RouteGenerator() {
             Brewery
           </button>
           <button
-            onClick={() => setIncludeViewpoint(!includeViewpoint)}
+            onClick={() => handleToggleStop('viewpoint', includeViewpoint, setIncludeViewpoint)}
             className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
               includeViewpoint
                 ? 'bg-green-100 text-green-700 border border-green-300'
@@ -421,7 +501,7 @@ export function RouteGenerator() {
             Viewpoints
           </button>
           <button
-            onClick={() => setIncludePark(!includePark)}
+            onClick={() => handleToggleStop('park', includePark, setIncludePark)}
             className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
               includePark
                 ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
@@ -452,6 +532,39 @@ export function RouteGenerator() {
               step={100}
             />
           </div>
+        )}
+
+        {/* POI search status and selections */}
+        {searchingPois && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            Finding options...
+          </div>
+        )}
+
+        {availablePois.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-[10px] text-muted-foreground">
+              {availablePois.length} found — click markers on map to select ({selectedStopIds.size} selected)
+            </p>
+            {selectedStopIds.size > 0 && (
+              <div className="space-y-0.5">
+                {availablePois.filter((p) => selectedStopIds.has(p.id)).map((p) => {
+                  const config = markerConfig[p.type] ?? markerConfig.coffee;
+                  return (
+                    <div key={p.id} className="flex items-center gap-1.5 text-xs bg-green-50 rounded px-2 py-1 border border-green-200">
+                      <span>{config.emoji}</span>
+                      <span className="truncate font-medium">{p.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!searchingPois && (includeCoffee || includeBrewery || includeViewpoint || includePark) && availablePois.length === 0 && startPoint && (
+          <p className="text-[10px] text-muted-foreground italic">No options found nearby</p>
         )}
       </div>
 

@@ -13,6 +13,7 @@ interface Preferences {
   activity: 'running' | 'cycling';
   mapStyle: 'streets' | 'outdoors' | 'satellite';
   surfacePreference: 'any' | 'paved' | 'unpaved';
+  preferBikeLanes: boolean;
   avoidances: Avoidances;
 
   // Athlete profile
@@ -28,6 +29,7 @@ interface Preferences {
   setActivity: (activity: 'running' | 'cycling') => void;
   setMapStyle: (style: 'streets' | 'outdoors' | 'satellite') => void;
   setSurfacePreference: (pref: 'any' | 'paved' | 'unpaved') => void;
+  setPreferBikeLanes: (prefer: boolean) => void;
   setAvoidances: (avoidances: Avoidances) => void;
   setFtp: (ftp: number) => void;
   setWeight: (weight: number) => void;
@@ -44,6 +46,7 @@ export const usePreferences = create<Preferences>()(
       activity: 'running',
       mapStyle: 'outdoors',
       surfacePreference: 'any',
+      preferBikeLanes: false,
       avoidances: { highways: false, steps: false, ferries: false },
       ftp: 200,
       weight: 75,
@@ -55,6 +58,7 @@ export const usePreferences = create<Preferences>()(
       setActivity: (activity) => set({ activity }),
       setMapStyle: (style) => set({ mapStyle: style }),
       setSurfacePreference: (pref) => set({ surfacePreference: pref }),
+      setPreferBikeLanes: (prefer) => set({ preferBikeLanes: prefer }),
       setAvoidances: (avoidances) => set({ avoidances }),
       setFtp: (ftp) => set({ ftp }),
       setWeight: (weight) => set({ weight }),

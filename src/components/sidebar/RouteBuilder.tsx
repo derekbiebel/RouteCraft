@@ -6,7 +6,7 @@ import { usePreferences } from '../../store/usePreferences';
 
 export function RouteBuilder() {
   const { waypoints, removeWaypoint, clearRoute, addWaypoint } = useRouteStore();
-  const { activity, setActivity, surfacePreference, setSurfacePreference, avoidances, setAvoidances } = usePreferences();
+  const { activity, setActivity, surfacePreference, setSurfacePreference, avoidances, setAvoidances, preferBikeLanes, setPreferBikeLanes } = usePreferences();
   const [returnToStart, setReturnToStart] = useState(false);
 
   // When toggling return-to-start, add/remove the start point as last waypoint
@@ -100,6 +100,22 @@ export function RouteBuilder() {
           ))}
         </div>
       </div>
+
+      {/* Bike lane preference */}
+      {activity === 'cycling' && (
+        <div>
+          <button
+            onClick={() => setPreferBikeLanes(!preferBikeLanes)}
+            className={`flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              preferBikeLanes
+                ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                : 'bg-secondary text-secondary-foreground hover:bg-accent'
+            }`}
+          >
+            🚲 Prefer Bike Lanes & Paths
+          </button>
+        </div>
+      )}
 
       {/* Avoidances */}
       <div>

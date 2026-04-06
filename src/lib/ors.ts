@@ -23,10 +23,10 @@ export interface RouteResult {
 
 type ORSProfile = 'foot-walking' | 'foot-hiking' | 'cycling-regular' | 'cycling-mountain' | 'cycling-road';
 
-export function getORSProfile(activity: 'running' | 'cycling', surfacePref: string): ORSProfile {
+export function getORSProfile(activity: 'running' | 'cycling', surfacePref: string, preferBikeLanes = false): ORSProfile {
   if (activity === 'cycling') {
     if (surfacePref === 'unpaved') return 'cycling-mountain';
-    if (surfacePref === 'paved') return 'cycling-road';
+    if (preferBikeLanes || surfacePref === 'paved') return 'cycling-road';
     return 'cycling-regular';
   }
   return surfacePref === 'unpaved' ? 'foot-hiking' : 'foot-walking';

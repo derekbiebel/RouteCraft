@@ -6,10 +6,34 @@ import { usePreferences } from '../../store/usePreferences';
 import { getDirections, getRoundTrip, getORSProfile } from '../../lib/ors';
 import { CATEGORY_COLORS } from '../../lib/surfaces';
 
-const STYLE_URLS: Record<string, string> = {
+const STYLE_URLS: Record<string, string | object> = {
   streets: 'https://tiles.openfreemap.org/styles/liberty',
   outdoors: 'https://tiles.openfreemap.org/styles/positron',
-  satellite: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap_satellite.json',
+  satellite: '', // handled inline below
+};
+
+const SATELLITE_STYLE = {
+  version: 8 as const,
+  sources: {
+    satellite: {
+      type: 'raster' as const,
+      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: '&copy; Esri',
+    },
+    'osm-labels': {
+      type: 'raster' as const,
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: '&copy; OpenStreetMap',
+    },
+  },
+  layers: [
+    { id: 'satellite', type: 'raster' as const, source: 'satellite' },
+    { id: 'osm-labels', type: 'raster' as const, source: 'osm-labels', paint: { 'raster-opacity': 0.35 } },
+  ],
 };
 
 export function MapView() {
@@ -20,6 +44,7 @@ export function MapView() {
   const activity = usePreferences((s) => s.activity);
   const surfacePref = usePreferences((s) => s.surfacePreference);
   const avoidances = usePreferences((s) => s.avoidances);
+  const preferBikeLanes = usePreferences((s) => s.preferBikeLanes);
   const { waypoints, addWaypoint, setRoute, setLoading, setError, route } = useRouteStore();
 
   // Initialize map
@@ -28,7 +53,7 @@ export function MapView() {
 
     const map = new maplibregl.Map({
       container: mapContainer.current,
-      style: STYLE_URLS[mapStyle],
+      style: (mapStyle === 'satellite' ? SATELLITE_STYLE : STYLE_URLS[mapStyle]) as string,
       center: usePreferences.getState().defaultLocation?.lngLat ?? [-104.99, 39.74],
       zoom: usePreferences.getState().defaultLocation ? 14 : 12,
     });
@@ -92,7 +117,7 @@ export function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setStyle(STYLE_URLS[mapStyle]);
+    map.setStyle((mapStyle === 'satellite' ? SATELLITE_STYLE : STYLE_URLS[mapStyle]) as string);
 
     map.once('styledata', () => {
       // Small delay to let style fully load
@@ -196,7 +221,7 @@ export function MapView() {
       return;
     }
 
-    const profile = getORSProfile(activity, surfacePref);
+    const profile = getORSProfile(activity, surfacePref, preferBikeLanes);
     setLoading(true);
     setError(null);
 
@@ -211,7 +236,7 @@ export function MapView() {
         setLoading(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waypoints, activity, surfacePref, avoidances]);
+  }, [waypoints, activity, surfacePref, avoidances, preferBikeLanes]);
 
   // Expose map ref for search
   useEffect(() => {
