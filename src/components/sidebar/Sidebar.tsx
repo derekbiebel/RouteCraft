@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Compass, Coffee, Beer, Settings2, Mountain, Trees, MapPin, Star, Trash2, Plus } from 'lucide-react';
+import { Compass, Coffee, Beer, Settings2, Mountain, Trees, MapPin, Star, Trash2, Plus, X } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
@@ -208,6 +208,25 @@ export function Sidebar() {
 
       {/* Main content */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {/* Clear route button */}
+        {(route || useRouteStore.getState().waypoints.length > 0) && (
+          <button
+            onClick={() => {
+              useRouteStore.getState().clearRoute();
+              // Clear route line from map
+              const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
+                current: { getSource: (id: string) => { setData: (d: unknown) => void } | undefined } | null;
+              };
+              const source = mapRef?.current?.getSource('route') as { setData: (d: unknown) => void } | undefined;
+              source?.setData({ type: 'FeatureCollection', features: [] });
+            }}
+            className="flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-md text-sm font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+          >
+            <X className="size-4" />
+            Clear Route & Start Over
+          </button>
+        )}
+
         <Tabs defaultValue="build">
           <TabsList className="w-full">
             <TabsTrigger value="build" className="flex-1">Build</TabsTrigger>
