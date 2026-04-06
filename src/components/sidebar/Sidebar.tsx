@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Compass, Coffee, Beer, Settings2, Mountain, Trees } from 'lucide-react';
+import { Compass, Coffee, Beer, Settings2, Mountain, Trees, MapPin, Star, Trash2, Plus } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
@@ -18,8 +18,10 @@ import { distanceLabel } from '../../lib/units';
 
 export function Sidebar() {
   const { route, stops, isLoading, error } = useRouteStore();
-  const { units, setUnits, activity, ftp, setFtp, weight, setWeight, thresholdPace, setThresholdPace } = usePreferences();
+  const { units, setUnits, activity, ftp, setFtp, weight, setWeight, thresholdPace, setThresholdPace,
+          savedLocations, addSavedLocation, removeSavedLocation, defaultLocation, setDefaultLocation } = usePreferences();
   const [showAthleteSettings, setShowAthleteSettings] = useState(false);
+  const [newLocName, setNewLocName] = useState('');
 
   return (
     <div className="w-80 h-full bg-card border-r flex flex-col overflow-hidden">
@@ -115,6 +117,88 @@ export function Sidebar() {
                 }}
                 className="h-8 mt-1 font-mono text-sm"
               />
+            </div>
+
+            <Separator />
+
+            {/* Saved Starting Locations */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <MapPin className="size-3.5" />
+                Starting Locations
+              </p>
+
+              {savedLocations.map((loc) => (
+                <div key={loc.name} className="flex items-center gap-1.5 group">
+                  <button
+                    onClick={() => {
+                      setDefaultLocation(defaultLocation?.name === loc.name ? null : loc);
+                    }}
+                    title={defaultLocation?.name === loc.name ? 'Remove as default' : 'Set as default'}
+                  >
+                    <Star className={`size-3.5 ${defaultLocation?.name === loc.name ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}`} />
+                  </button>
+                  <button
+                    className="flex-1 text-left text-xs font-medium truncate hover:text-primary transition-colors"
+                    onClick={() => {
+                      const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as { current: { flyTo: (o: unknown) => void } | null };
+                      mapRef?.current?.flyTo({ center: loc.lngLat, zoom: 14, duration: 1000 });
+                      useRouteStore.getState().clearRoute();
+                      useRouteStore.getState().addWaypoint(loc.lngLat);
+                    }}
+                  >
+                    {loc.name}
+                    {defaultLocation?.name === loc.name && (
+                      <span className="ml-1 text-[9px] text-amber-500 font-mono">DEFAULT</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => removeSavedLocation(loc.name)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Trash2 className="size-3 text-muted-foreground hover:text-destructive" />
+                  </button>
+                </div>
+              ))}
+
+              {/* Save current start point */}
+              {useRouteStore.getState().waypoints.length > 0 && (
+                <div className="flex gap-1.5">
+                  <Input
+                    value={newLocName}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewLocName(e.target.value)}
+                    placeholder="Name this location..."
+                    className="h-7 text-xs flex-1"
+                    onKeyDown={(e: React.KeyboardEvent) => {
+                      if (e.key === 'Enter' && newLocName.trim()) {
+                        const wp = useRouteStore.getState().waypoints[0];
+                        addSavedLocation(newLocName.trim(), wp);
+                        setNewLocName('');
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      if (!newLocName.trim()) return;
+                      const wp = useRouteStore.getState().waypoints[0];
+                      if (wp) {
+                        addSavedLocation(newLocName.trim(), wp);
+                        setNewLocName('');
+                      }
+                    }}
+                    className="text-muted-foreground hover:text-primary"
+                    disabled={!newLocName.trim()}
+                  >
+                    <Plus className="size-4" />
+                  </button>
+                </div>
+              )}
+
+              {savedLocations.length === 0 && useRouteStore.getState().waypoints.length === 0 && (
+                <p className="text-[10px] text-muted-foreground italic">
+                  Click the map to set a start point, then save it here
+                </p>
+              )}
             </div>
           </div>
         )}

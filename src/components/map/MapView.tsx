@@ -29,8 +29,8 @@ export function MapView() {
     const map = new maplibregl.Map({
       container: mapContainer.current,
       style: STYLE_URLS[mapStyle],
-      center: [-104.99, 39.74], // Denver default
-      zoom: 12,
+      center: usePreferences.getState().defaultLocation?.lngLat ?? [-104.99, 39.74],
+      zoom: usePreferences.getState().defaultLocation ? 14 : 12,
     });
 
     map.addControl(new maplibregl.NavigationControl(), 'bottom-right');

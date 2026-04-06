@@ -20,6 +20,10 @@ interface Preferences {
   weight: number; // kg
   thresholdPace: number; // sec/km (running)
 
+  // Saved starting locations
+  savedLocations: { name: string; lngLat: [number, number] }[];
+  defaultLocation: { name: string; lngLat: [number, number] } | null;
+
   setUnits: (units: UnitSystem) => void;
   setActivity: (activity: 'running' | 'cycling') => void;
   setMapStyle: (style: 'streets' | 'outdoors' | 'satellite') => void;
@@ -28,6 +32,9 @@ interface Preferences {
   setFtp: (ftp: number) => void;
   setWeight: (weight: number) => void;
   setThresholdPace: (pace: number) => void;
+  addSavedLocation: (name: string, lngLat: [number, number]) => void;
+  removeSavedLocation: (name: string) => void;
+  setDefaultLocation: (loc: { name: string; lngLat: [number, number] } | null) => void;
 }
 
 export const usePreferences = create<Preferences>()(
@@ -41,6 +48,8 @@ export const usePreferences = create<Preferences>()(
       ftp: 200,
       weight: 75,
       thresholdPace: 300, // 5:00/km
+      savedLocations: [],
+      defaultLocation: null,
 
       setUnits: (units) => set({ units }),
       setActivity: (activity) => set({ activity }),
@@ -50,6 +59,18 @@ export const usePreferences = create<Preferences>()(
       setFtp: (ftp) => set({ ftp }),
       setWeight: (weight) => set({ weight }),
       setThresholdPace: (pace) => set({ thresholdPace: pace }),
+      addSavedLocation: (name, lngLat) =>
+        set((s) => ({
+          savedLocations: s.savedLocations.some((l) => l.name === name)
+            ? s.savedLocations
+            : [...s.savedLocations, { name, lngLat }],
+        })),
+      removeSavedLocation: (name) =>
+        set((s) => ({
+          savedLocations: s.savedLocations.filter((l) => l.name !== name),
+          defaultLocation: s.defaultLocation?.name === name ? null : s.defaultLocation,
+        })),
+      setDefaultLocation: (loc) => set({ defaultLocation: loc }),
     }),
     { name: 'routecraft-preferences' }
   )
