@@ -25,29 +25,38 @@ export async function findPOIsAlongRoute(
   const east = Math.max(...lngs) + bufferDeg;
   const bbox = `${south},${west},${north},${east}`;
 
-  // Build Overpass query for selected POI types
+  // Build Overpass query for selected POI types (search nodes AND ways)
   const filters: string[] = [];
   if (types.includes('brewery')) {
-    filters.push(`node["craft"="brewery"](${bbox});`);
-    filters.push(`node["amenity"="pub"]["microbrewery"="yes"](${bbox});`);
-    filters.push(`node["brewery"](${bbox});`);
+    for (const el of ['node', 'way']) {
+      filters.push(`${el}["craft"="brewery"](${bbox});`);
+      filters.push(`${el}["amenity"="pub"]["microbrewery"="yes"](${bbox});`);
+      filters.push(`${el}["amenity"="bar"]["craft"="brewery"](${bbox});`);
+      filters.push(`${el}["amenity"="biergarten"](${bbox});`);
+      filters.push(`${el}["microbrewery"="yes"](${bbox});`);
+      filters.push(`${el}["brewery"](${bbox});`);
+    }
   }
   if (types.includes('coffee')) {
-    filters.push(`node["amenity"="cafe"](${bbox});`);
-    filters.push(`node["cuisine"="coffee"](${bbox});`);
+    for (const el of ['node', 'way']) {
+      filters.push(`${el}["amenity"="cafe"](${bbox});`);
+      filters.push(`${el}["cuisine"="coffee"](${bbox});`);
+      filters.push(`${el}["shop"="coffee"](${bbox});`);
+    }
   }
   if (types.includes('viewpoint')) {
     filters.push(`node["tourism"="viewpoint"](${bbox});`);
+    filters.push(`way["tourism"="viewpoint"](${bbox});`);
   }
   if (types.includes('park')) {
-    filters.push(`node["leisure"="park"](${bbox});`);
-    filters.push(`way["leisure"="park"](${bbox});`);
+    for (const el of ['node', 'way', 'relation']) {
+      filters.push(`${el}["leisure"="park"](${bbox});`);
+      filters.push(`${el}["leisure"="nature_reserve"](${bbox});`);
+    }
     filters.push(`relation["boundary"="national_park"](${bbox});`);
-    filters.push(`node["leisure"="nature_reserve"](${bbox});`);
-    filters.push(`way["leisure"="nature_reserve"](${bbox});`);
   }
 
-  const query = `[out:json][timeout:10];(${filters.join('')});out body center;`;
+  const query = `[out:json][timeout:15];(${filters.join('')});out body center;`;
 
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
@@ -119,24 +128,37 @@ export async function findPOIsNearPoint(
 
   const filters: string[] = [];
   if (types.includes('brewery')) {
-    filters.push(`node["craft"="brewery"](${bbox});`);
-    filters.push(`node["amenity"="pub"]["microbrewery"="yes"](${bbox});`);
-    filters.push(`node["brewery"](${bbox});`);
+    // Search both nodes and ways for all brewery-related tags
+    for (const el of ['node', 'way']) {
+      filters.push(`${el}["craft"="brewery"](${bbox});`);
+      filters.push(`${el}["amenity"="pub"]["microbrewery"="yes"](${bbox});`);
+      filters.push(`${el}["amenity"="bar"]["craft"="brewery"](${bbox});`);
+      filters.push(`${el}["amenity"="biergarten"](${bbox});`);
+      filters.push(`${el}["microbrewery"="yes"](${bbox});`);
+      filters.push(`${el}["brewery"](${bbox});`);
+    }
   }
   if (types.includes('coffee')) {
-    filters.push(`node["amenity"="cafe"](${bbox});`);
-    filters.push(`node["cuisine"="coffee"](${bbox});`);
+    // Search both nodes and ways — amenity=cafe covers most coffee shops
+    for (const el of ['node', 'way']) {
+      filters.push(`${el}["amenity"="cafe"](${bbox});`);
+      filters.push(`${el}["cuisine"="coffee"](${bbox});`);
+      filters.push(`${el}["shop"="coffee"](${bbox});`);
+    }
   }
   if (types.includes('viewpoint')) {
     filters.push(`node["tourism"="viewpoint"](${bbox});`);
+    filters.push(`way["tourism"="viewpoint"](${bbox});`);
   }
   if (types.includes('park')) {
-    filters.push(`node["leisure"="park"](${bbox});`);
-    filters.push(`way["leisure"="park"](${bbox});`);
+    for (const el of ['node', 'way', 'relation']) {
+      filters.push(`${el}["leisure"="park"](${bbox});`);
+      filters.push(`${el}["leisure"="nature_reserve"](${bbox});`);
+    }
     filters.push(`relation["boundary"="national_park"](${bbox});`);
   }
 
-  const query = `[out:json][timeout:10];(${filters.join('')});out body center;`;
+  const query = `[out:json][timeout:15];(${filters.join('')});out body center;`;
 
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
