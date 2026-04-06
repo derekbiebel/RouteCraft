@@ -1,18 +1,13 @@
 import { useState } from 'react';
 import { MapPin, Trash2, RotateCcw, CornerDownLeft, Navigation } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
 import { useRouteStore } from '../../store/useRouteStore';
 import { usePreferences } from '../../store/usePreferences';
-import { Settings2 } from 'lucide-react';
 
 export function RouteBuilder() {
   const { waypoints, removeWaypoint, clearRoute, addWaypoint } = useRouteStore();
-  const { activity, setActivity, surfacePreference, setSurfacePreference, avoidances, setAvoidances,
-          ftp, setFtp, weight, setWeight, thresholdPace, setThresholdPace, units } = usePreferences();
+  const { activity, setActivity, surfacePreference, setSurfacePreference, avoidances, setAvoidances } = usePreferences();
   const [returnToStart, setReturnToStart] = useState(false);
-  const [showAthleteSettings, setShowAthleteSettings] = useState(false);
 
   // When toggling return-to-start, add/remove the start point as last waypoint
   const handleReturnToggle = () => {
@@ -178,85 +173,6 @@ export function RouteBuilder() {
         </Button>
       )}
 
-      <Separator />
-
-      {/* Athlete settings */}
-      <button
-        onClick={() => setShowAthleteSettings(!showAthleteSettings)}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <Settings2 className="size-3.5" />
-        {showAthleteSettings ? 'Hide Athlete Settings' : 'Athlete Settings'}
-      </button>
-
-      {showAthleteSettings && (
-        <div className="bg-secondary/30 rounded-lg p-3 space-y-3">
-          {activity === 'cycling' ? (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">FTP (watts)</label>
-              <Input
-                type="number"
-                value={ftp}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFtp(Number(e.target.value) || 100)}
-                className="h-8 mt-1 font-mono text-sm"
-                min={50}
-                max={500}
-              />
-            </div>
-          ) : (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">
-                Threshold Pace ({units === 'imperial' ? 'min/mi' : 'min/km'})
-              </label>
-              <div className="flex gap-1 mt-1">
-                <Input
-                  type="number"
-                  value={Math.floor((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) / 60)}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    const min = Number(e.target.value) || 0;
-                    const sec = (units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) % 60;
-                    const totalSec = min * 60 + sec;
-                    setThresholdPace(units === 'imperial' ? totalSec / 1.60934 : totalSec);
-                  }}
-                  className="h-8 font-mono text-sm w-16"
-                  min={3}
-                  max={15}
-                  placeholder="min"
-                />
-                <span className="text-sm self-center">:</span>
-                <Input
-                  type="number"
-                  value={Math.round((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) % 60)}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    const sec = Math.min(59, Number(e.target.value) || 0);
-                    const min = Math.floor((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) / 60);
-                    const totalSec = min * 60 + sec;
-                    setThresholdPace(units === 'imperial' ? totalSec / 1.60934 : totalSec);
-                  }}
-                  className="h-8 font-mono text-sm w-16"
-                  min={0}
-                  max={59}
-                  placeholder="sec"
-                />
-              </div>
-            </div>
-          )}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">
-              Weight ({units === 'imperial' ? 'lbs' : 'kg'})
-            </label>
-            <Input
-              type="number"
-              value={units === 'imperial' ? Math.round(weight * 2.20462) : weight}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                const val = Number(e.target.value) || 50;
-                setWeight(units === 'imperial' ? val / 2.20462 : val);
-              }}
-              className="h-8 mt-1 font-mono text-sm"
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

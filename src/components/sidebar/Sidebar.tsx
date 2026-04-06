@@ -1,6 +1,8 @@
-import { Compass, Coffee, Beer } from 'lucide-react';
+import { useState } from 'react';
+import { Compass, Coffee, Beer, Settings2, Mountain, Trees } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
 import { SearchBar } from './SearchBar';
 import { RouteBuilder } from './RouteBuilder';
 import { RouteGenerator } from './RouteGenerator';
@@ -16,8 +18,8 @@ import { distanceLabel } from '../../lib/units';
 
 export function Sidebar() {
   const { route, stops, isLoading, error } = useRouteStore();
-  const units = usePreferences((s) => s.units);
-  const setUnits = usePreferences((s) => s.setUnits);
+  const { units, setUnits, activity, ftp, setFtp, weight, setWeight, thresholdPace, setThresholdPace } = usePreferences();
+  const [showAthleteSettings, setShowAthleteSettings] = useState(false);
 
   return (
     <div className="w-80 h-full bg-card border-r flex flex-col overflow-hidden">
@@ -27,6 +29,17 @@ export function Sidebar() {
           <div className="flex items-center gap-2">
             <Compass className="size-5 text-primary" />
             <h1 className="text-lg font-bold tracking-tight">RouteCraft</h1>
+            <button
+              onClick={() => setShowAthleteSettings(!showAthleteSettings)}
+              className={`p-1 rounded transition-colors ${
+                showAthleteSettings
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+              }`}
+              title="Athlete Settings"
+            >
+              <Settings2 className="size-4" />
+            </button>
           </div>
           <button
             onClick={() => setUnits(units === 'imperial' ? 'metric' : 'imperial')}
@@ -35,6 +48,77 @@ export function Sidebar() {
             {distanceLabel(units)}
           </button>
         </div>
+
+        {/* Athlete Settings Panel */}
+        {showAthleteSettings && (
+          <div className="bg-secondary/30 rounded-lg p-3 space-y-3 mb-3">
+            {activity === 'cycling' ? (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">FTP (watts)</label>
+                <Input
+                  type="number"
+                  value={ftp}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFtp(Number(e.target.value) || 100)}
+                  className="h-8 mt-1 font-mono text-sm"
+                  min={50}
+                  max={500}
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">
+                  Threshold Pace ({units === 'imperial' ? 'min/mi' : 'min/km'})
+                </label>
+                <div className="flex gap-1 mt-1">
+                  <Input
+                    type="number"
+                    value={Math.floor((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) / 60)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      const min = Number(e.target.value) || 0;
+                      const sec = (units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) % 60;
+                      const totalSec = min * 60 + sec;
+                      setThresholdPace(units === 'imperial' ? totalSec / 1.60934 : totalSec);
+                    }}
+                    className="h-8 font-mono text-sm w-16"
+                    min={3}
+                    max={15}
+                    placeholder="min"
+                  />
+                  <span className="text-sm self-center">:</span>
+                  <Input
+                    type="number"
+                    value={Math.round((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) % 60)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      const sec = Math.min(59, Number(e.target.value) || 0);
+                      const min = Math.floor((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) / 60);
+                      const totalSec = min * 60 + sec;
+                      setThresholdPace(units === 'imperial' ? totalSec / 1.60934 : totalSec);
+                    }}
+                    className="h-8 font-mono text-sm w-16"
+                    min={0}
+                    max={59}
+                    placeholder="sec"
+                  />
+                </div>
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                Weight ({units === 'imperial' ? 'lbs' : 'kg'})
+              </label>
+              <Input
+                type="number"
+                value={units === 'imperial' ? Math.round(weight * 2.20462) : weight}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const val = Number(e.target.value) || 50;
+                  setWeight(units === 'imperial' ? val / 2.20462 : val);
+                }}
+                className="h-8 mt-1 font-mono text-sm"
+              />
+            </div>
+          </div>
+        )}
+
         <SearchBar />
       </div>
 
@@ -77,32 +161,29 @@ export function Sidebar() {
             {stops.length > 0 && (
               <div className="bg-secondary/50 rounded-lg p-3 space-y-2">
                 <p className="text-xs font-semibold text-foreground">Stops on This Route</p>
-                {stops.map((stop) => (
-                  <div
-                    key={stop.id}
-                    className="flex items-center gap-2.5"
-                  >
+                {stops.map((stop) => {
+                  const stopStyles: Record<string, { bg: string; icon: React.ReactNode; label: string }> = {
+                    brewery: { bg: 'bg-amber-100 border border-amber-300', icon: <Beer className="size-3.5 text-amber-700" />, label: 'Brewery' },
+                    coffee: { bg: 'bg-purple-100 border border-purple-300', icon: <Coffee className="size-3.5 text-purple-700" />, label: 'Coffee Shop' },
+                    viewpoint: { bg: 'bg-green-100 border border-green-300', icon: <Mountain className="size-3.5 text-green-700" />, label: 'Viewpoint' },
+                    park: { bg: 'bg-emerald-100 border border-emerald-300', icon: <Trees className="size-3.5 text-emerald-700" />, label: 'Park' },
+                  };
+                  const style = stopStyles[stop.type] ?? stopStyles.coffee;
+                  return (
                     <div
-                      className={`flex items-center justify-center size-7 rounded-full text-sm ${
-                        stop.type === 'brewery'
-                          ? 'bg-amber-100 border border-amber-300'
-                          : 'bg-purple-100 border border-purple-300'
-                      }`}
+                      key={stop.id}
+                      className="flex items-center gap-2.5"
                     >
-                      {stop.type === 'brewery' ? (
-                        <Beer className="size-3.5 text-amber-700" />
-                      ) : (
-                        <Coffee className="size-3.5 text-purple-700" />
-                      )}
+                      <div className={`flex items-center justify-center size-7 rounded-full text-sm ${style.bg}`}>
+                        {style.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{stop.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{style.label}</p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{stop.name}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {stop.type === 'brewery' ? 'Brewery' : 'Coffee Shop'}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

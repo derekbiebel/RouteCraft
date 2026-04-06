@@ -11,7 +11,7 @@ export interface Avoidances {
 interface Preferences {
   units: UnitSystem;
   activity: 'running' | 'cycling';
-  mapStyle: 'streets' | 'outdoors';
+  mapStyle: 'streets' | 'outdoors' | 'satellite';
   surfacePreference: 'any' | 'paved' | 'unpaved';
   avoidances: Avoidances;
 
@@ -22,7 +22,7 @@ interface Preferences {
 
   setUnits: (units: UnitSystem) => void;
   setActivity: (activity: 'running' | 'cycling') => void;
-  setMapStyle: (style: 'streets' | 'outdoors') => void;
+  setMapStyle: (style: 'streets' | 'outdoors' | 'satellite') => void;
   setSurfacePreference: (pref: 'any' | 'paved' | 'unpaved') => void;
   setAvoidances: (avoidances: Avoidances) => void;
   setFtp: (ftp: number) => void;

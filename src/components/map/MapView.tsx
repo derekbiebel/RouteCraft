@@ -9,6 +9,7 @@ import { CATEGORY_COLORS } from '../../lib/surfaces';
 const STYLE_URLS: Record<string, string> = {
   streets: 'https://tiles.openfreemap.org/styles/liberty',
   outdoors: 'https://tiles.openfreemap.org/styles/positron',
+  satellite: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap_satellite.json',
 };
 
 export function MapView() {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shuffle, Play, Loader2, Coffee, Beer, Clock, Ruler, Settings2 } from 'lucide-react';
+import { Shuffle, Play, Loader2, Coffee, Beer, Clock, Ruler, Mountain, Trees } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { generateRoundTrip } from '../map/MapView';
 import { getDirections, getORSProfile } from '../../lib/ors';
 import { fromDisplayDistance, distanceLabel, formatDistance } from '../../lib/units';
 import { CATEGORY_COLORS } from '../../lib/surfaces';
-import { findPOIsAlongRoute, type POI } from '../../lib/poi';
+import { findPOIsAlongRoute, type POI, type POIType } from '../../lib/poi';
 import { distanceFromTime, estimateSpeedMs, formatSpeed } from '../../lib/speed';
 import maplibregl from 'maplibre-gl';
 
@@ -20,7 +20,7 @@ export function RouteGenerator() {
   const { waypoints, isLoading, roundTripSeed, newSeed, setRoute, setLoading, setStops } = useRouteStore();
   const prefs = usePreferences();
   const { activity, setActivity, surfacePreference, setSurfacePreference, units,
-          avoidances, setAvoidances, ftp, setFtp, weight, setWeight, thresholdPace, setThresholdPace } = prefs;
+          avoidances, setAvoidances, ftp, weight, thresholdPace } = prefs;
 
   const [mode, setMode] = useState<GenerateMode>('distance');
   const [targetDistance, setTargetDistance] = useState(5);
@@ -28,9 +28,10 @@ export function RouteGenerator() {
   const [intensityFactor, setIntensityFactor] = useState(0.75);
   const [includeCoffee, setIncludeCoffee] = useState(false);
   const [includeBrewery, setIncludeBrewery] = useState(false);
+  const [includeViewpoint, setIncludeViewpoint] = useState(false);
+  const [includePark, setIncludePark] = useState(false);
   const [stopRadius, setStopRadius] = useState(800);
   const [stopMarkers, setStopMarkers] = useState<maplibregl.Marker[]>([]);
-  const [showAthleteSettings, setShowAthleteSettings] = useState(false);
 
   const startPoint = waypoints[0] ?? null;
 
@@ -68,13 +69,19 @@ export function RouteGenerator() {
   };
 
   const addStopMarker = (poi: POI, map: maplibregl.Map): maplibregl.Marker => {
-    const isBrew = poi.type === 'brewery';
+    const markerConfig: Record<string, { bg: string; emoji: string; label: string }> = {
+      brewery: { bg: '#f59e0b', emoji: '🍺', label: 'Brewery' },
+      coffee: { bg: '#8b5cf6', emoji: '☕', label: 'Coffee Shop' },
+      viewpoint: { bg: '#22c55e', emoji: '🏔️', label: 'Viewpoint' },
+      park: { bg: '#10b981', emoji: '🌲', label: 'Park' },
+    };
+    const config = markerConfig[poi.type] ?? markerConfig.coffee;
     const el = document.createElement('div');
-    el.innerHTML = `<div style="background:${isBrew ? '#f59e0b' : '#8b5cf6'};border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);font-size:16px">${isBrew ? '🍺' : '☕'}</div>`;
+    el.innerHTML = `<div style="background:${config.bg};border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);font-size:16px">${config.emoji}</div>`;
     return new maplibregl.Marker({ element: el })
       .setLngLat([poi.lng, poi.lat])
       .setPopup(new maplibregl.Popup({ offset: 18 }).setHTML(
-        `<div style="font-family:DM Sans,sans-serif;padding:2px 0"><strong style="font-size:13px">${poi.name}</strong><br/><span style="font-size:11px;color:#666">${isBrew ? 'Brewery' : 'Coffee Shop'}</span></div>`
+        `<div style="font-family:DM Sans,sans-serif;padding:2px 0"><strong style="font-size:13px">${poi.name}</strong><br/><span style="font-size:11px;color:#666">${config.label}</span></div>`
       ))
       .addTo(map);
   };
@@ -92,62 +99,61 @@ export function RouteGenerator() {
     const result = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
     if (!result) return;
 
-    const wantStops = includeCoffee || includeBrewery;
+    const wantStops = includeCoffee || includeBrewery || includeViewpoint || includePark;
 
     if (wantStops) {
       const allCoords = result.segments.flatMap((seg) => seg.coordinates);
-      const searchTypes: ('coffee' | 'brewery')[] = [];
+      const searchTypes: POIType[] = [];
       if (includeCoffee) searchTypes.push('coffee');
       if (includeBrewery) searchTypes.push('brewery');
+      if (includeViewpoint) searchTypes.push('viewpoint');
+      if (includePark) searchTypes.push('park');
 
-      const pois = await findPOIsAlongRoute(allCoords, searchTypes, stopRadius);
+      // Search with wider radius first, then narrow down
+      const pois = await findPOIsAlongRoute(allCoords, searchTypes, Math.max(stopRadius, 1500));
 
       if (pois.length > 0) {
-        const midIdx = Math.floor(allCoords.length / 2);
-        const midPoint = allCoords[midIdx];
+        // Pick the best stop for EACH enabled type, spread along the route
+        const enabledTypes = searchTypes;
+        const numTypes = enabledTypes.length;
+        const selectedStops: POI[] = [];
 
-        let bestPoi = pois[0];
-        let bestDist = Infinity;
-        for (const poi of pois) {
-          const d = Math.hypot(poi.lat - midPoint[1], poi.lng - midPoint[0]);
-          if (d < bestDist) {
-            bestDist = d;
-            bestPoi = poi;
-          }
-        }
+        for (let t = 0; t < numTypes; t++) {
+          const type = enabledTypes[t];
+          const candidates = pois.filter((p) => p.type === type);
+          if (candidates.length === 0) continue;
 
-        let secondPoi: POI | null = null;
-        if (includeCoffee && includeBrewery) {
-          const otherType = bestPoi.type === 'coffee' ? 'brewery' : 'coffee';
-          const others = pois.filter((p) => p.type === otherType);
-          if (others.length > 0) {
-            const quarterIdx = Math.floor(allCoords.length / 4);
-            const quarterPoint = allCoords[quarterIdx];
-            let best2 = others[0];
-            let best2Dist = Infinity;
-            for (const p of others) {
-              const d = Math.hypot(p.lat - quarterPoint[1], p.lng - quarterPoint[0]);
-              if (d < best2Dist) {
-                best2Dist = d;
-                best2 = p;
-              }
+          // Place each type at a different fraction of the route
+          const fraction = (t + 1) / (numTypes + 1);
+          const targetIdx = Math.floor(allCoords.length * fraction);
+          const targetPoint = allCoords[targetIdx];
+
+          let best = candidates[0];
+          let bestDist = Infinity;
+          for (const c of candidates) {
+            const d = Math.hypot(c.lat - targetPoint[1], c.lng - targetPoint[0]);
+            if (d < bestDist) {
+              bestDist = d;
+              best = c;
             }
-            secondPoi = best2;
           }
+          selectedStops.push(best);
         }
 
-        const viaPoints: [number, number][] = [];
-        if (secondPoi) {
-          const dist1 = Math.hypot(bestPoi.lat - allCoords[0][1], bestPoi.lng - allCoords[0][0]);
-          const dist2 = Math.hypot(secondPoi.lat - allCoords[0][1], secondPoi.lng - allCoords[0][0]);
-          if (dist1 < dist2) {
-            viaPoints.push([bestPoi.lng, bestPoi.lat], [secondPoi.lng, secondPoi.lat]);
-          } else {
-            viaPoints.push([secondPoi.lng, secondPoi.lat], [bestPoi.lng, bestPoi.lat]);
-          }
-        } else {
-          viaPoints.push([bestPoi.lng, bestPoi.lat]);
+        if (selectedStops.length === 0) {
+          renderOnMap(result);
+          return;
         }
+
+        // Sort via points by distance from start so route visits them in order
+        const viaStops = selectedStops
+          .map((s) => ({ stop: s, distFromStart: allCoords.findIndex((c) =>
+            Math.hypot(c[1] - s.lat, c[0] - s.lng) < 0.01
+          ) || Math.hypot(s.lat - allCoords[0][1], s.lng - allCoords[0][0]) }))
+          .sort((a, b) => a.distFromStart - b.distFromStart)
+          .map((s) => s.stop);
+
+        const viaPoints: [number, number][] = viaStops.map((s) => [s.lng, s.lat]);
 
         const profile = getORSProfile(activity, surfacePreference);
         setLoading(true);
@@ -164,10 +170,9 @@ export function RouteGenerator() {
             current: maplibregl.Map | null;
           };
           if (mapRef?.current) {
-            const allStops = [bestPoi, ...(secondPoi ? [secondPoi] : [])];
-            const markers = allStops.map((p) => addStopMarker(p, mapRef.current!));
+            const markers = viaStops.map((p) => addStopMarker(p, mapRef.current!));
             setStopMarkers(markers);
-            setStops(allStops);
+            setStops(viaStops);
           }
         } catch {
           renderOnMap(result);
@@ -283,9 +288,22 @@ export function RouteGenerator() {
         <div>
           <div className="flex justify-between items-baseline mb-2">
             <p className="text-xs font-medium text-muted-foreground">Target Distance</p>
-            <p className="font-mono text-sm font-semibold">
-              {targetDistance} {distanceLabel(units)}
-            </p>
+            <div className="flex items-baseline gap-1">
+              <Input
+                type="number"
+                value={targetDistance}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const max = activity === 'cycling' ? 100 : 30;
+                  const val = Math.max(1, Math.min(max, Number(e.target.value) || 1));
+                  setTargetDistance(val);
+                }}
+                className="h-7 w-20 font-mono text-sm text-right"
+                min={1}
+                max={activity === 'cycling' ? 100 : 30}
+                step={0.5}
+              />
+              <span className="text-xs text-muted-foreground">{distanceLabel(units)}</span>
+            </div>
           </div>
           <Slider
             value={[targetDistance]}
@@ -301,9 +319,22 @@ export function RouteGenerator() {
           <div>
             <div className="flex justify-between items-baseline mb-2">
               <p className="text-xs font-medium text-muted-foreground">Ride/Run Time</p>
-              <p className="font-mono text-sm font-semibold">
-                {targetTime >= 60 ? `${Math.floor(targetTime / 60)}h ${targetTime % 60}m` : `${targetTime}m`}
-              </p>
+              <div className="flex items-baseline gap-1">
+                <Input
+                  type="number"
+                  value={targetTime}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    const max = activity === 'cycling' ? 300 : 180;
+                    const val = Math.max(15, Math.min(max, Number(e.target.value) || 15));
+                    setTargetTime(val);
+                  }}
+                  className="h-7 w-20 font-mono text-sm text-right"
+                  min={15}
+                  max={activity === 'cycling' ? 300 : 180}
+                  step={5}
+                />
+                <span className="text-xs text-muted-foreground">min</span>
+              </div>
             </div>
             <Slider
               value={[targetTime]}
@@ -360,84 +391,6 @@ export function RouteGenerator() {
         </div>
       )}
 
-      {/* Athlete settings — always accessible */}
-      <button
-        onClick={() => setShowAthleteSettings(!showAthleteSettings)}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <Settings2 className="size-3.5" />
-        {showAthleteSettings ? 'Hide Athlete Settings' : 'Athlete Settings'}
-      </button>
-
-      {showAthleteSettings && (
-        <div className="bg-secondary/30 rounded-lg p-3 space-y-3">
-          {activity === 'cycling' ? (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">FTP (watts)</label>
-              <Input
-                type="number"
-                value={ftp}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFtp(Number(e.target.value) || 100)}
-                className="h-8 mt-1 font-mono text-sm"
-                min={50}
-                max={500}
-              />
-            </div>
-          ) : (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">
-                Threshold Pace ({units === 'imperial' ? 'min/mi' : 'min/km'})
-              </label>
-              <div className="flex gap-1 mt-1">
-                <Input
-                  type="number"
-                  value={Math.floor((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) / 60)}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    const min = Number(e.target.value) || 0;
-                    const sec = (units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) % 60;
-                    const totalSec = min * 60 + sec;
-                    setThresholdPace(units === 'imperial' ? totalSec / 1.60934 : totalSec);
-                  }}
-                  className="h-8 font-mono text-sm w-16"
-                  min={3}
-                  max={15}
-                  placeholder="min"
-                />
-                <span className="text-sm self-center">:</span>
-                <Input
-                  type="number"
-                  value={Math.round((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) % 60)}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    const sec = Math.min(59, Number(e.target.value) || 0);
-                    const min = Math.floor((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) / 60);
-                    const totalSec = min * 60 + sec;
-                    setThresholdPace(units === 'imperial' ? totalSec / 1.60934 : totalSec);
-                  }}
-                  className="h-8 font-mono text-sm w-16"
-                  min={0}
-                  max={59}
-                  placeholder="sec"
-                />
-              </div>
-            </div>
-          )}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">
-              Weight ({units === 'imperial' ? 'lbs' : 'kg'})
-            </label>
-            <Input
-              type="number"
-              value={units === 'imperial' ? Math.round(weight * 2.20462) : weight}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                const val = Number(e.target.value) || 50;
-                setWeight(units === 'imperial' ? val / 2.20462 : val);
-              }}
-              className="h-8 mt-1 font-mono text-sm"
-            />
-          </div>
-        </div>
-      )}
-
       {/* Stops toggles */}
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Include Stops</p>
@@ -464,9 +417,31 @@ export function RouteGenerator() {
             <Beer className="size-4" />
             Brewery
           </button>
+          <button
+            onClick={() => setIncludeViewpoint(!includeViewpoint)}
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              includeViewpoint
+                ? 'bg-green-100 text-green-700 border border-green-300'
+                : 'bg-secondary text-secondary-foreground hover:bg-accent'
+            }`}
+          >
+            <Mountain className="size-4" />
+            Viewpoints
+          </button>
+          <button
+            onClick={() => setIncludePark(!includePark)}
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              includePark
+                ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                : 'bg-secondary text-secondary-foreground hover:bg-accent'
+            }`}
+          >
+            <Trees className="size-4" />
+            Parks
+          </button>
         </div>
 
-        {(includeCoffee || includeBrewery) && (
+        {(includeCoffee || includeBrewery || includeViewpoint || includePark) && (
           <div>
             <div className="flex justify-between items-baseline mb-1.5">
               <p className="text-xs font-medium text-muted-foreground">Search Radius</p>

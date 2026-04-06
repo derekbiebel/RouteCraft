@@ -1,14 +1,16 @@
+export type POIType = 'brewery' | 'coffee' | 'viewpoint' | 'park';
+
 export interface POI {
   id: number;
   name: string;
-  type: 'brewery' | 'coffee';
+  type: POIType;
   lat: number;
   lng: number;
 }
 
 export async function findPOIsAlongRoute(
   coordinates: [number, number, number][],
-  types: ('brewery' | 'coffee')[],
+  types: POIType[],
   bufferMeters = 500
 ): Promise<POI[]> {
   if (coordinates.length === 0 || types.length === 0) return [];
@@ -34,8 +36,18 @@ export async function findPOIsAlongRoute(
     filters.push(`node["amenity"="cafe"](${bbox});`);
     filters.push(`node["cuisine"="coffee"](${bbox});`);
   }
+  if (types.includes('viewpoint')) {
+    filters.push(`node["tourism"="viewpoint"](${bbox});`);
+  }
+  if (types.includes('park')) {
+    filters.push(`node["leisure"="park"](${bbox});`);
+    filters.push(`way["leisure"="park"](${bbox});`);
+    filters.push(`relation["boundary"="national_park"](${bbox});`);
+    filters.push(`node["leisure"="nature_reserve"](${bbox});`);
+    filters.push(`way["leisure"="nature_reserve"](${bbox});`);
+  }
 
-  const query = `[out:json][timeout:10];(${filters.join('')});out body;`;
+  const query = `[out:json][timeout:10];(${filters.join('')});out body center;`;
 
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
@@ -50,12 +62,14 @@ export async function findPOIsAlongRoute(
   const pois: POI[] = [];
 
   for (const el of data.elements ?? []) {
-    if (!el.lat || !el.lon) continue;
+    const lat = el.lat ?? el.center?.lat;
+    const lon = el.lon ?? el.center?.lon;
+    if (!lat || !lon) continue;
     const name = el.tags?.name;
     if (!name) continue;
 
     // Dedupe by name + rough location
-    const key = `${name}-${el.lat.toFixed(3)}-${el.lon.toFixed(3)}`;
+    const key = `${name}-${lat.toFixed(3)}-${lon.toFixed(3)}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
@@ -64,11 +78,21 @@ export async function findPOIsAlongRoute(
       el.tags?.craft === 'brewery' ||
       el.tags?.microbrewery === 'yes' ||
       el.tags?.brewery;
-    const type: POI['type'] = isBrewer ? 'brewery' : 'coffee';
+    const isViewpoint = el.tags?.tourism === 'viewpoint';
+    const isPark =
+      el.tags?.leisure === 'park' ||
+      el.tags?.boundary === 'national_park' ||
+      el.tags?.leisure === 'nature_reserve';
+
+    let type: POI['type'];
+    if (isBrewer) type = 'brewery';
+    else if (isViewpoint) type = 'viewpoint';
+    else if (isPark) type = 'park';
+    else type = 'coffee';
 
     // Only include if within buffer distance of the route
-    if (isNearRoute(el.lat, el.lon, coordinates, bufferMeters)) {
-      pois.push({ id: el.id, name, type, lat: el.lat, lng: el.lon });
+    if (isNearRoute(lat, lon, coordinates, bufferMeters)) {
+      pois.push({ id: el.id, name, type, lat, lng: lon });
     }
   }
 
