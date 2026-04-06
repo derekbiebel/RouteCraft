@@ -6,6 +6,7 @@ interface RouteState {
   waypoints: [number, number][];
   route: RouteResult | null;
   stops: POI[];
+  elevationGoalMeters: number; // 0 = no goal
   isLoading: boolean;
   error: string | null;
   roundTripSeed: number;
@@ -17,6 +18,7 @@ interface RouteState {
   clearRoute: () => void;
   setRoute: (route: RouteResult) => void;
   setStops: (stops: POI[]) => void;
+  setElevationGoal: (meters: number) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   newSeed: () => void;
@@ -26,6 +28,7 @@ export const useRouteStore = create<RouteState>((set) => ({
   waypoints: [],
   route: null,
   stops: [],
+  elevationGoalMeters: 0,
   isLoading: false,
   error: null,
   roundTripSeed: Math.floor(Math.random() * 100),
@@ -39,9 +42,10 @@ export const useRouteStore = create<RouteState>((set) => ({
       waypoints: s.waypoints.map((w, i) => (i === index ? lngLat : w)),
     })),
   setWaypoints: (waypoints) => set({ waypoints }),
-  clearRoute: () => set({ waypoints: [], route: null, stops: [], error: null }),
+  clearRoute: () => set({ waypoints: [], route: null, stops: [], elevationGoalMeters: 0, error: null }),
   setRoute: (route) => set({ route, error: null }),
   setStops: (stops) => set({ stops }),
+  setElevationGoal: (meters) => set({ elevationGoalMeters: meters }),
   setLoading: (loading) => set({ isLoading: loading }),
   setError: (error) => set({ error, isLoading: false }),
   newSeed: () => set({ roundTripSeed: Math.floor(Math.random() * 100) }),

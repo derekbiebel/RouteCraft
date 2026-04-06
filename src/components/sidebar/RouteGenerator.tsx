@@ -17,7 +17,7 @@ import maplibregl from 'maplibre-gl';
 type GenerateMode = 'distance' | 'time';
 
 export function RouteGenerator() {
-  const { waypoints, isLoading, roundTripSeed, newSeed, setRoute, setLoading, setStops } = useRouteStore();
+  const { waypoints, isLoading, roundTripSeed, newSeed, setRoute, setLoading, setStops, setElevationGoal: setStoreElevGoal } = useRouteStore();
   const prefs = usePreferences();
   const { activity, setActivity, surfacePreference, setSurfacePreference, units,
           avoidances, setAvoidances, ftp, weight, thresholdPace, preferBikeLanes, setPreferBikeLanes } = prefs;
@@ -36,6 +36,8 @@ export function RouteGenerator() {
   const [availablePois, setAvailablePois] = useState<POI[]>([]);
   const [selectedStopIds, setSelectedStopIds] = useState<Set<number>>(new Set());
   const [searchingPois, setSearchingPois] = useState(false);
+  const [elevationGoal, setElevationGoal] = useState(0); // in display units (ft or m), 0 = no goal
+  const [elevationWarning, setElevationWarning] = useState('');
 
   const startPoint = waypoints[0] ?? null;
 
@@ -177,6 +179,10 @@ export function RouteGenerator() {
     clearRouteStopMarkers();
     setStops([]);
 
+    // Store elevation goal for display in RouteStats
+    const goalMeters = elevationGoal > 0 ? (units === 'imperial' ? elevationGoal / 3.28084 : elevationGoal) : 0;
+    setStoreElevGoal(goalMeters);
+
     const meters = mode === 'distance'
       ? fromDisplayDistance(targetDistance, units)
       : estimatedDistance;
@@ -283,6 +289,50 @@ export function RouteGenerator() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Elevation goal */}
+      <div>
+        <div className="flex justify-between items-baseline mb-1.5">
+          <p className="text-xs font-medium text-muted-foreground">Elevation Goal (optional)</p>
+          <span className="text-[10px] text-muted-foreground">{units === 'imperial' ? 'ft' : 'm'}</span>
+        </div>
+        <Input
+          type="number"
+          value={elevationGoal || ''}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+            const val = Math.max(0, Number(e.target.value) || 0);
+            setElevationGoal(val);
+
+            // Validate: check if elevation goal is reasonable for the distance
+            const meters = mode === 'distance' ? fromDisplayDistance(targetDistance, units) : estimatedDistance;
+            const distKm = meters / 1000;
+            const goalMeters = units === 'imperial' ? val / 3.28084 : val;
+            // Max reasonable grade averages ~8-10% for a full ride
+            const maxReasonableElevation = distKm * 100; // 100m per km = 10% avg grade
+            // Min reasonable: ~5m per km for flat areas
+            const minAvailable = distKm * 5;
+
+            if (val === 0) {
+              setElevationWarning('');
+            } else if (goalMeters > maxReasonableElevation) {
+              const maxDisplay = units === 'imperial'
+                ? `${Math.round(maxReasonableElevation * 3.28084).toLocaleString()} ft`
+                : `${Math.round(maxReasonableElevation).toLocaleString()} m`;
+              setElevationWarning(`That's very steep for this distance. Max reasonable: ~${maxDisplay}`);
+            } else if (goalMeters < minAvailable) {
+              setElevationWarning('');
+            } else {
+              setElevationWarning('');
+            }
+          }}
+          placeholder="e.g. 1500"
+          className="h-8 font-mono text-sm"
+          min={0}
+        />
+        {elevationWarning && (
+          <p className="text-[10px] text-amber-600 mt-1">{elevationWarning}</p>
+        )}
       </div>
 
       {/* Bike lane preference */}
