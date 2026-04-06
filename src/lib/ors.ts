@@ -1,4 +1,5 @@
 import { getSurfaceInfo, type SurfaceInfo } from './surfaces';
+import type { Avoidances } from '../store/usePreferences';
 
 const API_KEY = import.meta.env.VITE_ORS_API_KEY as string;
 const BASE_URL = 'https://api.openrouteservice.org/v2';
@@ -20,31 +21,60 @@ export interface RouteResult {
   surfaceBreakdown: { category: string; distance: number; percent: number }[];
 }
 
-type ORSProfile = 'foot-walking' | 'foot-hiking' | 'cycling-regular' | 'cycling-mountain';
+type ORSProfile = 'foot-walking' | 'foot-hiking' | 'cycling-regular' | 'cycling-mountain' | 'cycling-road';
 
 export function getORSProfile(activity: 'running' | 'cycling', surfacePref: string): ORSProfile {
   if (activity === 'cycling') {
-    return surfacePref === 'unpaved' ? 'cycling-mountain' : 'cycling-regular';
+    if (surfacePref === 'unpaved') return 'cycling-mountain';
+    if (surfacePref === 'paved') return 'cycling-road';
+    return 'cycling-regular';
   }
   return surfacePref === 'unpaved' ? 'foot-hiking' : 'foot-walking';
 }
 
+function buildAvoidFeatures(avoidances: Avoidances): string[] {
+  const features: string[] = [];
+  if (avoidances.highways) features.push('highways');
+  if (avoidances.steps) features.push('steps');
+  if (avoidances.ferries) features.push('ferries');
+  return features;
+}
+
+function buildOptions(avoidances?: Avoidances, roundTrip?: { length: number; points: number; seed: number }): Record<string, unknown> | undefined {
+  const opts: Record<string, unknown> = {};
+  if (roundTrip) opts.round_trip = roundTrip;
+
+  if (avoidances) {
+    const features = buildAvoidFeatures(avoidances);
+    if (features.length > 0) {
+      opts.avoid_features = features;
+    }
+  }
+
+  return Object.keys(opts).length > 0 ? opts : undefined;
+}
+
 export async function getDirections(
   coordinates: [number, number][],
-  profile: ORSProfile
+  profile: ORSProfile,
+  avoidances?: Avoidances
 ): Promise<RouteResult> {
+  const options = buildOptions(avoidances);
+  const body: Record<string, unknown> = {
+    coordinates,
+    elevation: true,
+    extra_info: ['surface'],
+    instructions: false,
+  };
+  if (options) body.options = options;
+
   const res = await fetch(`${BASE_URL}/directions/${profile}/geojson`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': API_KEY,
     },
-    body: JSON.stringify({
-      coordinates,
-      elevation: true,
-      extra_info: ['surface'],
-      instructions: false,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -60,8 +90,15 @@ export async function getRoundTrip(
   start: [number, number],
   lengthMeters: number,
   profile: ORSProfile,
-  seed?: number
+  seed?: number,
+  avoidances?: Avoidances
 ): Promise<RouteResult> {
+  const options = buildOptions(avoidances, {
+    length: lengthMeters,
+    points: 3,
+    seed: seed ?? Math.floor(Math.random() * 100),
+  });
+
   const res = await fetch(`${BASE_URL}/directions/${profile}/geojson`, {
     method: 'POST',
     headers: {
@@ -73,13 +110,7 @@ export async function getRoundTrip(
       elevation: true,
       extra_info: ['surface'],
       instructions: false,
-      options: {
-        round_trip: {
-          length: lengthMeters,
-          points: 3,
-          seed: seed ?? Math.floor(Math.random() * 100),
-        },
-      },
+      options,
     }),
   });
 
@@ -140,7 +171,6 @@ function parseORSResponse(data: {
       categoryDistances[surface.category] = (categoryDistances[surface.category] ?? 0) + segDist;
     }
   } else {
-    // No surface info — single segment
     segments.push({
       coordinates: coords,
       surface: getSurfaceInfo(0),

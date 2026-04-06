@@ -1,26 +1,42 @@
 import { useState } from 'react';
-import { Shuffle, Play, Loader2, Coffee, Beer } from 'lucide-react';
+import { Shuffle, Play, Loader2, Coffee, Beer, Clock, Ruler, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import { useRouteStore } from '../../store/useRouteStore';
 import { usePreferences } from '../../store/usePreferences';
 import { generateRoundTrip } from '../map/MapView';
 import { getDirections, getORSProfile } from '../../lib/ors';
-import { fromDisplayDistance, distanceLabel } from '../../lib/units';
+import { fromDisplayDistance, distanceLabel, formatDistance } from '../../lib/units';
 import { CATEGORY_COLORS } from '../../lib/surfaces';
 import { findPOIsAlongRoute, type POI } from '../../lib/poi';
+import { distanceFromTime, estimateSpeedMs, formatSpeed } from '../../lib/speed';
 import maplibregl from 'maplibre-gl';
+
+type GenerateMode = 'distance' | 'time';
 
 export function RouteGenerator() {
   const { waypoints, isLoading, roundTripSeed, newSeed, setRoute, setLoading, setStops } = useRouteStore();
-  const { activity, setActivity, surfacePreference, setSurfacePreference, units } = usePreferences();
+  const prefs = usePreferences();
+  const { activity, setActivity, surfacePreference, setSurfacePreference, units,
+          avoidances, setAvoidances, ftp, setFtp, weight, setWeight, thresholdPace, setThresholdPace } = prefs;
+
+  const [mode, setMode] = useState<GenerateMode>('distance');
   const [targetDistance, setTargetDistance] = useState(5);
+  const [targetTime, setTargetTime] = useState(60); // minutes
+  const [intensityFactor, setIntensityFactor] = useState(0.75);
   const [includeCoffee, setIncludeCoffee] = useState(false);
   const [includeBrewery, setIncludeBrewery] = useState(false);
   const [stopRadius, setStopRadius] = useState(800);
   const [stopMarkers, setStopMarkers] = useState<maplibregl.Marker[]>([]);
+  const [showAthleteSettings, setShowAthleteSettings] = useState(false);
 
   const startPoint = waypoints[0] ?? null;
+
+  // Calculate estimated values for time mode
+  const estimatedSpeed = estimateSpeedMs(activity, intensityFactor, ftp, weight, thresholdPace);
+  const estimatedDistance = mode === 'time' ? distanceFromTime(targetTime, activity, intensityFactor, ftp, weight, thresholdPace) : 0;
 
   const renderOnMap = (result: { segments: { coordinates: [number, number, number][]; surface: { category: string } }[]; bbox: [number, number, number, number] }) => {
     const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
@@ -68,8 +84,12 @@ export function RouteGenerator() {
     clearStopMarkers();
     setStops([]);
 
-    const meters = fromDisplayDistance(targetDistance, units);
-    const result = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed);
+    // Calculate distance
+    const meters = mode === 'distance'
+      ? fromDisplayDistance(targetDistance, units)
+      : estimatedDistance;
+
+    const result = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
     if (!result) return;
 
     const wantStops = includeCoffee || includeBrewery;
@@ -83,7 +103,6 @@ export function RouteGenerator() {
       const pois = await findPOIsAlongRoute(allCoords, searchTypes, stopRadius);
 
       if (pois.length > 0) {
-        // Pick the best stop closest to the midpoint
         const midIdx = Math.floor(allCoords.length / 2);
         const midPoint = allCoords[midIdx];
 
@@ -97,13 +116,11 @@ export function RouteGenerator() {
           }
         }
 
-        // If both types enabled, also try to find a second stop of the other type
         let secondPoi: POI | null = null;
         if (includeCoffee && includeBrewery) {
           const otherType = bestPoi.type === 'coffee' ? 'brewery' : 'coffee';
           const others = pois.filter((p) => p.type === otherType);
           if (others.length > 0) {
-            // Pick one in the other half of the route
             const quarterIdx = Math.floor(allCoords.length / 4);
             const quarterPoint = allCoords[quarterIdx];
             let best2 = others[0];
@@ -119,10 +136,8 @@ export function RouteGenerator() {
           }
         }
 
-        // Build waypoints: start → stop(s) → start
         const viaPoints: [number, number][] = [];
         if (secondPoi) {
-          // Order by which comes first along the route
           const dist1 = Math.hypot(bestPoi.lat - allCoords[0][1], bestPoi.lng - allCoords[0][0]);
           const dist2 = Math.hypot(secondPoi.lat - allCoords[0][1], secondPoi.lng - allCoords[0][0]);
           if (dist1 < dist2) {
@@ -139,12 +154,12 @@ export function RouteGenerator() {
         try {
           const rerouted = await getDirections(
             [startPoint, ...viaPoints, startPoint],
-            profile
+            profile,
+            avoidances
           );
           setRoute(rerouted);
           renderOnMap(rerouted);
 
-          // Add markers
           const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
             current: maplibregl.Map | null;
           };
@@ -209,22 +224,219 @@ export function RouteGenerator() {
         </div>
       </div>
 
-      {/* Target distance */}
+      {/* Avoidances */}
       <div>
-        <div className="flex justify-between items-baseline mb-2">
-          <p className="text-xs font-medium text-muted-foreground">Target Distance</p>
-          <p className="font-mono text-sm font-semibold">
-            {targetDistance} {distanceLabel(units)}
-          </p>
+        <p className="text-xs font-medium text-muted-foreground mb-1.5">Avoid</p>
+        <div className="flex flex-wrap gap-1.5">
+          {([
+            { key: 'highways' as const, label: 'Busy Roads' },
+            { key: 'steps' as const, label: 'Steps/Stairs' },
+            { key: 'ferries' as const, label: 'Ferries' },
+          ]).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setAvoidances({ ...avoidances, [key]: !avoidances[key] })}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                avoidances[key]
+                  ? 'bg-red-100 text-red-700 border border-red-300'
+                  : 'bg-secondary text-secondary-foreground hover:bg-accent'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <Slider
-          value={[targetDistance]}
-          onValueChange={(val) => setTargetDistance(Array.isArray(val) ? val[0] : val)}
-          min={1}
-          max={activity === 'cycling' ? 100 : 30}
-          step={0.5}
-        />
       </div>
+
+      <Separator />
+
+      {/* Distance vs Time mode toggle */}
+      <div>
+        <p className="text-xs font-medium text-muted-foreground mb-1.5">Generate By</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            onClick={() => setMode('distance')}
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              mode === 'distance'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-secondary text-secondary-foreground hover:bg-accent'
+            }`}
+          >
+            <Ruler className="size-3.5" />
+            Distance
+          </button>
+          <button
+            onClick={() => setMode('time')}
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              mode === 'time'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-secondary text-secondary-foreground hover:bg-accent'
+            }`}
+          >
+            <Clock className="size-3.5" />
+            Time
+          </button>
+        </div>
+      </div>
+
+      {mode === 'distance' ? (
+        /* Distance slider */
+        <div>
+          <div className="flex justify-between items-baseline mb-2">
+            <p className="text-xs font-medium text-muted-foreground">Target Distance</p>
+            <p className="font-mono text-sm font-semibold">
+              {targetDistance} {distanceLabel(units)}
+            </p>
+          </div>
+          <Slider
+            value={[targetDistance]}
+            onValueChange={(val) => setTargetDistance(Array.isArray(val) ? val[0] : val)}
+            min={1}
+            max={activity === 'cycling' ? 100 : 30}
+            step={0.5}
+          />
+        </div>
+      ) : (
+        /* Time + IF controls */
+        <div className="space-y-3">
+          <div>
+            <div className="flex justify-between items-baseline mb-2">
+              <p className="text-xs font-medium text-muted-foreground">Ride/Run Time</p>
+              <p className="font-mono text-sm font-semibold">
+                {targetTime >= 60 ? `${Math.floor(targetTime / 60)}h ${targetTime % 60}m` : `${targetTime}m`}
+              </p>
+            </div>
+            <Slider
+              value={[targetTime]}
+              onValueChange={(val) => setTargetTime(Array.isArray(val) ? val[0] : val)}
+              min={15}
+              max={activity === 'cycling' ? 300 : 180}
+              step={5}
+            />
+          </div>
+
+          <div>
+            <div className="flex justify-between items-baseline mb-2">
+              <p className="text-xs font-medium text-muted-foreground">Intensity Factor</p>
+              <p className="font-mono text-sm font-semibold">{intensityFactor.toFixed(2)}</p>
+            </div>
+            <Slider
+              value={[intensityFactor]}
+              onValueChange={(val) => setIntensityFactor(Array.isArray(val) ? val[0] : val)}
+              min={0.5}
+              max={1.1}
+              step={0.01}
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+              <span>Recovery</span>
+              <span>Endurance</span>
+              <span>Tempo</span>
+              <span>Threshold</span>
+            </div>
+          </div>
+
+          {/* Estimated values */}
+          <div className="bg-secondary/50 rounded-lg px-3 py-2 space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Est. Speed</span>
+              <span className="font-mono font-semibold">{formatSpeed(estimatedSpeed, activity, units)}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Est. Distance</span>
+              <span className="font-mono font-semibold">{formatDistance(estimatedDistance, units)}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">
+                {activity === 'cycling' ? 'Avg Power' : 'Avg Pace'}
+              </span>
+              <span className="font-mono font-semibold">
+                {activity === 'cycling'
+                  ? `${Math.round(ftp * intensityFactor)}W`
+                  : formatSpeed(estimatedSpeed, 'running', units)
+                }
+              </span>
+            </div>
+          </div>
+
+          {/* Athlete settings */}
+          <button
+            onClick={() => setShowAthleteSettings(!showAthleteSettings)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Settings2 className="size-3.5" />
+            {showAthleteSettings ? 'Hide' : 'Athlete Settings'}
+          </button>
+
+          {showAthleteSettings && (
+            <div className="bg-secondary/30 rounded-lg p-3 space-y-3">
+              {activity === 'cycling' ? (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">FTP (watts)</label>
+                  <Input
+                    type="number"
+                    value={ftp}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFtp(Number(e.target.value) || 100)}
+                    className="h-8 mt-1 font-mono text-sm"
+                    min={50}
+                    max={500}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Threshold Pace ({units === 'imperial' ? 'min/mi' : 'min/km'})
+                  </label>
+                  <div className="flex gap-1 mt-1">
+                    <Input
+                      type="number"
+                      value={Math.floor((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) / 60)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        const min = Number(e.target.value) || 0;
+                        const sec = (units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) % 60;
+                        const totalSec = min * 60 + sec;
+                        setThresholdPace(units === 'imperial' ? totalSec / 1.60934 : totalSec);
+                      }}
+                      className="h-8 font-mono text-sm w-16"
+                      min={3}
+                      max={15}
+                      placeholder="min"
+                    />
+                    <span className="text-sm self-center">:</span>
+                    <Input
+                      type="number"
+                      value={Math.round((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) % 60)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        const sec = Math.min(59, Number(e.target.value) || 0);
+                        const min = Math.floor((units === 'imperial' ? thresholdPace * 1.60934 : thresholdPace) / 60);
+                        const totalSec = min * 60 + sec;
+                        setThresholdPace(units === 'imperial' ? totalSec / 1.60934 : totalSec);
+                      }}
+                      className="h-8 font-mono text-sm w-16"
+                      min={0}
+                      max={59}
+                      placeholder="sec"
+                    />
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">
+                  Weight ({units === 'imperial' ? 'lbs' : 'kg'})
+                </label>
+                <Input
+                  type="number"
+                  value={units === 'imperial' ? Math.round(weight * 2.20462) : weight}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    const val = Number(e.target.value) || 50;
+                    setWeight(units === 'imperial' ? val / 2.20462 : val);
+                  }}
+                  className="h-8 mt-1 font-mono text-sm"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Stops toggles */}
       <div className="space-y-2">
@@ -272,9 +484,6 @@ export function RouteGenerator() {
               max={3000}
               step={100}
             />
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Route will detour through the nearest {includeCoffee && includeBrewery ? 'coffee shop & brewery' : includeCoffee ? 'coffee shop' : 'brewery'}
-            </p>
           </div>
         )}
       </div>

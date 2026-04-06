@@ -18,6 +18,7 @@ export function MapView() {
   const mapStyle = usePreferences((s) => s.mapStyle);
   const activity = usePreferences((s) => s.activity);
   const surfacePref = usePreferences((s) => s.surfacePreference);
+  const avoidances = usePreferences((s) => s.avoidances);
   const { waypoints, addWaypoint, setRoute, setLoading, setError, route } = useRouteStore();
 
   // Initialize map
@@ -198,7 +199,7 @@ export function MapView() {
     setLoading(true);
     setError(null);
 
-    getDirections(waypoints, profile)
+    getDirections(waypoints, profile, avoidances)
       .then((result) => {
         setRoute(result);
         renderRoute(result);
@@ -209,7 +210,7 @@ export function MapView() {
         setLoading(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waypoints, activity, surfacePref]);
+  }, [waypoints, activity, surfacePref, avoidances]);
 
   // Expose map ref for search
   useEffect(() => {
@@ -227,7 +228,8 @@ export async function generateRoundTrip(
   lengthMeters: number,
   activity: 'running' | 'cycling',
   surfacePref: string,
-  seed?: number
+  seed?: number,
+  avoidances?: Parameters<typeof getRoundTrip>[4]
 ) {
   const store = useRouteStore.getState();
   const profile = getORSProfile(activity, surfacePref);
@@ -235,7 +237,7 @@ export async function generateRoundTrip(
   store.setError(null);
 
   try {
-    const result = await getRoundTrip(start, lengthMeters, profile, seed);
+    const result = await getRoundTrip(start, lengthMeters, profile, seed, avoidances);
     store.setRoute(result);
     store.setWaypoints([start]);
     return result;

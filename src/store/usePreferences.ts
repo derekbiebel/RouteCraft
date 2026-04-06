@@ -2,16 +2,32 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { UnitSystem } from '../lib/units';
 
+export interface Avoidances {
+  highways: boolean;
+  steps: boolean;
+  ferries: boolean;
+}
+
 interface Preferences {
   units: UnitSystem;
   activity: 'running' | 'cycling';
   mapStyle: 'streets' | 'outdoors';
   surfacePreference: 'any' | 'paved' | 'unpaved';
+  avoidances: Avoidances;
+
+  // Athlete profile
+  ftp: number; // watts (cycling)
+  weight: number; // kg
+  thresholdPace: number; // sec/km (running)
 
   setUnits: (units: UnitSystem) => void;
   setActivity: (activity: 'running' | 'cycling') => void;
   setMapStyle: (style: 'streets' | 'outdoors') => void;
   setSurfacePreference: (pref: 'any' | 'paved' | 'unpaved') => void;
+  setAvoidances: (avoidances: Avoidances) => void;
+  setFtp: (ftp: number) => void;
+  setWeight: (weight: number) => void;
+  setThresholdPace: (pace: number) => void;
 }
 
 export const usePreferences = create<Preferences>()(
@@ -21,11 +37,19 @@ export const usePreferences = create<Preferences>()(
       activity: 'running',
       mapStyle: 'outdoors',
       surfacePreference: 'any',
+      avoidances: { highways: false, steps: false, ferries: false },
+      ftp: 200,
+      weight: 75,
+      thresholdPace: 300, // 5:00/km
 
       setUnits: (units) => set({ units }),
       setActivity: (activity) => set({ activity }),
       setMapStyle: (style) => set({ mapStyle: style }),
       setSurfacePreference: (pref) => set({ surfacePreference: pref }),
+      setAvoidances: (avoidances) => set({ avoidances }),
+      setFtp: (ftp) => set({ ftp }),
+      setWeight: (weight) => set({ weight }),
+      setThresholdPace: (pace) => set({ thresholdPace: pace }),
     }),
     { name: 'routecraft-preferences' }
   )

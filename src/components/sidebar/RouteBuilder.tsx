@@ -5,7 +5,7 @@ import { usePreferences } from '../../store/usePreferences';
 
 export function RouteBuilder() {
   const { waypoints, removeWaypoint, clearRoute } = useRouteStore();
-  const { activity, setActivity, surfacePreference, setSurfacePreference } = usePreferences();
+  const { activity, setActivity, surfacePreference, setSurfacePreference, avoidances, setAvoidances } = usePreferences();
 
   return (
     <div className="space-y-4">
@@ -44,6 +44,30 @@ export function RouteBuilder() {
               }`}
             >
               {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Avoidances */}
+      <div>
+        <p className="text-xs font-medium text-muted-foreground mb-1.5">Avoid</p>
+        <div className="flex flex-wrap gap-1.5">
+          {([
+            { key: 'highways' as const, label: 'Busy Roads' },
+            { key: 'steps' as const, label: 'Steps/Stairs' },
+            { key: 'ferries' as const, label: 'Ferries' },
+          ]).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setAvoidances({ ...avoidances, [key]: !avoidances[key] })}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                avoidances[key]
+                  ? 'bg-red-100 text-red-700 border border-red-300'
+                  : 'bg-secondary text-secondary-foreground hover:bg-accent'
+              }`}
+            >
+              {label}
             </button>
           ))}
         </div>
