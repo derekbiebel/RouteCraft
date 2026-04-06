@@ -65,6 +65,8 @@ export async function getDirections(
     elevation: true,
     extra_info: ['surface'],
     instructions: false,
+    continue_straight: true,
+    preference: 'recommended',
   };
   if (options) body.options = options;
 
@@ -110,6 +112,8 @@ export async function getRoundTrip(
       elevation: true,
       extra_info: ['surface'],
       instructions: false,
+      continue_straight: true,
+      preference: 'recommended',
       options,
     }),
   });
