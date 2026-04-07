@@ -91,16 +91,19 @@ export function RouteGenerator() {
     setAvailablePois([]);
     setSelectedStopIds(new Set());
 
-    if (!startPoint || types.length === 0) return;
+    if (!startPoint || types.length === 0) {
+      console.log('[RouteCraft POI] Skipping search:', { startPoint, types });
+      return;
+    }
 
     setSearchingPois(true);
     const meters = mode === 'distance' ? fromDisplayDistance(targetDistance, units) : estimatedDistance || 10000;
-    // Search radius = full route distance (the route is a loop, so POIs anywhere
-    // along the circle are reachable). Minimum 10km.
     const searchRadius = Math.max(10000, meters);
+    console.log('[RouteCraft POI] Searching:', { startPoint, types, searchRadius, meters });
 
     try {
       const pois = await findPOIsNearPoint(startPoint, types, searchRadius);
+      console.log('[RouteCraft POI] Found:', pois.length, 'results', pois.slice(0, 3));
       setAvailablePois(pois);
 
       const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
@@ -154,8 +157,8 @@ export function RouteGenerator() {
       });
 
       setPreviewMarkers(markers);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('[RouteCraft POI] Search failed:', err);
     } finally {
       setSearchingPois(false);
     }

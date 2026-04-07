@@ -19,6 +19,7 @@ export async function searchFoursquare(
   if (!API_KEY || types.length === 0) return [];
 
   const radius = Math.min(radiusMeters, 50000);
+  console.log('[Foursquare] Searching:', { center, types, radiusMeters, hasApiKey: !!API_KEY });
   const allPois: POI[] = [];
   const seen = new Set<string>();
 
@@ -45,7 +46,11 @@ export async function searchFoursquare(
         },
       });
 
-      if (!res.ok) return [];
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        console.error('[Foursquare] API error:', res.status, errText);
+        return [];
+      }
 
       const data = await res.json();
       return (data.results ?? []).map((r: Record<string, unknown>) => ({ ...r, _searchType: type }));
