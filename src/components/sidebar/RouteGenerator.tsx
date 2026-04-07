@@ -30,7 +30,6 @@ export function RouteGenerator() {
   const [includeBrewery, setIncludeBrewery] = useState(false);
   const [includeViewpoint, setIncludeViewpoint] = useState(false);
   const [includePark, setIncludePark] = useState(false);
-  const [stopRadius, setStopRadius] = useState(800);
   const [previewMarkers, setPreviewMarkers] = useState<maplibregl.Marker[]>([]);
   const [routeStopMarkers, setRouteStopMarkers] = useState<maplibregl.Marker[]>([]);
   const [availablePois, setAvailablePois] = useState<POI[]>([]);
@@ -95,9 +94,9 @@ export function RouteGenerator() {
 
     setSearchingPois(true);
     const meters = mode === 'distance' ? fromDisplayDistance(targetDistance, units) : estimatedDistance || 10000;
-    // Minimum 10km (~6mi) search radius so nearby favorites always show up,
-    // or half the ride distance, whichever is larger
-    const searchRadius = Math.max(10000, stopRadius, meters / 2);
+    // Search radius = full route distance (the route is a loop, so POIs anywhere
+    // along the circle are reachable). Minimum 10km.
+    const searchRadius = Math.max(10000, meters);
 
     try {
       const pois = await findPOIsNearPoint(startPoint, types, searchRadius);
@@ -565,26 +564,6 @@ export function RouteGenerator() {
           </button>
         </div>
 
-        {(includeCoffee || includeBrewery || includeViewpoint || includePark) && (
-          <div>
-            <div className="flex justify-between items-baseline mb-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Search Radius</p>
-              <p className="font-mono text-xs font-semibold">
-                {units === 'imperial'
-                  ? `${(stopRadius * 3.28084 / 5280).toFixed(1)} mi`
-                  : `${stopRadius >= 1000 ? (stopRadius / 1000).toFixed(1) + ' km' : stopRadius + ' m'}`
-                }
-              </p>
-            </div>
-            <Slider
-              value={[stopRadius]}
-              onValueChange={(val) => setStopRadius(Array.isArray(val) ? val[0] : val)}
-              min={200}
-              max={3000}
-              step={100}
-            />
-          </div>
-        )}
 
         {/* POI search status and selections */}
         {searchingPois && (
