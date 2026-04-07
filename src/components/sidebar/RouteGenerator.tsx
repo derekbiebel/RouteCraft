@@ -286,7 +286,7 @@ export function RouteGenerator() {
               const el = document.createElement('div');
               el.className = 'poi-marker';
               el.style.zIndex = '200';
-              el.innerHTML = `<div style="background:${config.bg};border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:3px solid #22c55e;box-shadow:0 3px 8px rgba(0,0,0,0.4);font-size:18px">${config.emoji}</div>`;
+              el.innerHTML = `<div style="background:${config.bg};border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:4px solid #22c55e;box-shadow:0 4px 12px rgba(0,0,0,0.5);font-size:22px">${config.emoji}</div>`;
               return new maplibregl.Marker({ element: el })
                 .setLngLat([p.lng, p.lat])
                 .setPopup(new maplibregl.Popup({ offset: 20 }).setHTML(

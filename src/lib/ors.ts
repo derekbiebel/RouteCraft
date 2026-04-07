@@ -191,7 +191,12 @@ function parseORSResponse(data: {
     }))
     .sort((a, b) => b.distance - a.distance);
 
-  const bbox = (feature.bbox ?? data.bbox ?? [0, 0, 0, 0]) as [number, number, number, number];
+  // ORS bbox with elevation is [minLng, minLat, minElev, maxLng, maxLat, maxElev]
+  // Without elevation it's [minLng, minLat, maxLng, maxLat]
+  const rawBbox = feature.bbox ?? data.bbox ?? [0, 0, 0, 0];
+  const bbox: [number, number, number, number] = rawBbox.length === 6
+    ? [rawBbox[0], rawBbox[1], rawBbox[3], rawBbox[4]]
+    : [rawBbox[0], rawBbox[1], rawBbox[2], rawBbox[3]];
 
   return {
     segments,
