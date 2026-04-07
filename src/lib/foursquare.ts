@@ -3,78 +3,13 @@ import type { POI, POIType } from './poi';
 const API_KEY = import.meta.env.VITE_FOURSQUARE_API_KEY as string;
 const BASE_URL = 'https://places-api.foursquare.com/places/search';
 
-// Foursquare category IDs
-const CATEGORY_MAP: Record<POIType, string> = {
-  brewery: '50327c8591d4c4b30a586d5d', // Brewery
-  coffee: '4bf58dd8d48988d1e0931735',   // Coffee Shop
-  viewpoint: '4bf58dd8d48988d165941735', // Scenic Lookout
-  park: '4bf58dd8d48988d163941735',      // Park
+// Query terms for each POI type
+const QUERY_TERMS: Record<POIType, string[]> = {
+  brewery: ['brewery', 'taphouse', 'brewing'],
+  coffee: ['coffee', 'cafe'],
+  viewpoint: ['viewpoint', 'scenic lookout'],
+  park: ['park', 'nature reserve', 'trail'],
 };
-
-// Additional categories to search
-const EXTRA_CATEGORIES: Record<POIType, string[]> = {
-  brewery: [
-    '50327c8591d4c4b30a586d5d', // Brewery
-    '4bf58dd8d48988d117951735', // Beer Garden
-  ],
-  coffee: [
-    '4bf58dd8d48988d1e0931735', // Coffee Shop
-    '4bf58dd8d48988d16d941735', // Café
-  ],
-  viewpoint: [
-    '4bf58dd8d48988d165941735', // Scenic Lookout
-    '56aa371be4b08b9a8d573532', // Lookout/Viewpoint
-  ],
-  park: [
-    '4bf58dd8d48988d163941735', // Park
-    '52e81612bcbc57f1066b7a21', // National Park
-    '4bf58dd8d48988d159941735', // Trail
-  ],
-};
-
-interface FoursquareResult {
-  fsq_place_id?: string;
-  fsq_id?: string;
-  name: string;
-  geocodes?: { main?: { latitude: number; longitude: number } };
-  latitude?: number;
-  longitude?: number;
-  categories: { fsq_category_id?: string; id?: string; name: string }[];
-  location?: { formatted_address?: string };
-  distance?: number;
-}
-
-function categorizeResult(result: FoursquareResult, searchTypes: POIType[]): POIType | null {
-  const catIds = result.categories.map((c) => c.fsq_category_id ?? c.id ?? '');
-  const catNames = result.categories.map((c) => c.name.toLowerCase());
-
-  // Match by Foursquare category ID
-  for (const type of searchTypes) {
-    const ids = EXTRA_CATEGORIES[type] ?? [CATEGORY_MAP[type]];
-    if (catIds.some((id) => ids.includes(id))) return type;
-  }
-
-  // Fallback: match by category name
-  const nameMatches: Record<string, POIType> = {};
-  if (catNames.some((n) => n.includes('brew') || n.includes('beer'))) nameMatches['brewery'] = 'brewery';
-  if (catNames.some((n) => n.includes('coffee') || n.includes('café') || n.includes('cafe'))) nameMatches['coffee'] = 'coffee';
-  if (catNames.some((n) => n.includes('park') || n.includes('trail') || n.includes('nature'))) nameMatches['park'] = 'park';
-  if (catNames.some((n) => n.includes('viewpoint') || n.includes('lookout') || n.includes('scenic'))) nameMatches['viewpoint'] = 'viewpoint';
-
-  // Only return if it matches a requested type
-  for (const type of searchTypes) {
-    if (nameMatches[type]) return type;
-  }
-
-  // Also check the place name itself
-  const placeName = result.name.toLowerCase();
-  for (const type of searchTypes) {
-    if (type === 'brewery' && (placeName.includes('brew') || placeName.includes('beer') || placeName.includes('tap'))) return type;
-    if (type === 'coffee' && (placeName.includes('coffee') || placeName.includes('cafe') || placeName.includes('café'))) return type;
-  }
-
-  return null; // Doesn't match any requested type
-}
 
 export async function searchFoursquare(
   center: [number, number], // [lng, lat]
@@ -83,54 +18,61 @@ export async function searchFoursquare(
 ): Promise<POI[]> {
   if (!API_KEY || types.length === 0) return [];
 
-  // Collect all category IDs for the requested types
-  const allCatIds = types.flatMap((t) => EXTRA_CATEGORIES[t] ?? [CATEGORY_MAP[t]]);
-  const categoriesParam = allCatIds.join(',');
+  const radius = Math.min(radiusMeters, 50000);
+  const allPois: POI[] = [];
+  const seen = new Set<string>();
 
-  const params = new URLSearchParams({
-    ll: `${center[1]},${center[0]}`,
-    radius: String(Math.min(radiusMeters, 50000)), // Foursquare max 50km
-    categories: categoriesParam,
-    limit: '50',
-  });
+  // Run separate queries per type for accurate results
+  const queries = types.flatMap((type) =>
+    QUERY_TERMS[type].map((query) => ({ query, type }))
+  );
 
-  try {
-    const res = await fetch(`${BASE_URL}?${params}`, {
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Accept': 'application/json',
-        'X-Places-Api-Version': '2025-06-17',
-      },
-    });
+  // Run queries in parallel (max 4 at a time)
+  const results = await Promise.allSettled(
+    queries.map(async ({ query, type }) => {
+      const params = new URLSearchParams({
+        ll: `${center[1]},${center[0]}`,
+        radius: String(radius),
+        query,
+        limit: '20',
+      });
 
-    if (!res.ok) return [];
+      const res = await fetch(`${BASE_URL}?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${API_KEY}`,
+          'Accept': 'application/json',
+          'X-Places-Api-Version': '2025-06-17',
+        },
+      });
 
-    const data = await res.json();
-    const results: FoursquareResult[] = data.results ?? [];
+      if (!res.ok) return [];
 
-    const seen = new Set<string>();
-    const pois: POI[] = [];
+      const data = await res.json();
+      return (data.results ?? []).map((r: Record<string, unknown>) => ({ ...r, _searchType: type }));
+    })
+  );
 
-    for (const r of results) {
-      const lat = r.latitude ?? r.geocodes?.main?.latitude;
-      const lng = r.longitude ?? r.geocodes?.main?.longitude;
-      if (!lat || !lng || !r.name) continue;
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue;
 
-      // Dedupe
-      const key = `${r.name}-${lat.toFixed(3)}-${lng.toFixed(3)}`;
+    for (const r of result.value) {
+      const lat = r.latitude as number | undefined;
+      const lng = r.longitude as number | undefined;
+      const name = r.name as string | undefined;
+      if (!lat || !lng || !name) continue;
+
+      // Dedupe by name
+      const key = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
       if (seen.has(key)) continue;
       seen.add(key);
 
-      const type = categorizeResult(r, types);
-      // Skip results that don't actually match a requested type
-      if (!type) continue;
-      const id = parseInt((r.fsq_place_id ?? r.fsq_id ?? '0').replace(/\D/g, '').slice(-8) || '0', 16) || Math.random() * 1e9;
+      const type = r._searchType as POIType;
+      const fsqId = (r.fsq_place_id ?? '') as string;
+      const id = parseInt(fsqId.replace(/\D/g, '').slice(-8) || '0', 16) || Math.floor(Math.random() * 1e9);
 
-      pois.push({ id, name: r.name, type, lat, lng });
+      allPois.push({ id, name, type, lat, lng });
     }
-
-    return pois;
-  } catch {
-    return [];
   }
+
+  return allPois;
 }
