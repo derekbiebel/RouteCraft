@@ -122,9 +122,10 @@ export async function findPOIsNearPoint(
 ): Promise<POI[]> {
   if (types.length === 0) return [];
 
-  // Use Foursquare for breweries, coffee, and parks
+  // Foursquare handles: brewery, coffee, park
+  // OSM handles: viewpoint (not in Foursquare)
   const foursquareTypes = types.filter((t) => ['brewery', 'coffee', 'park'].includes(t));
-  const osmOnlyTypes = types.filter((t) => !['brewery', 'coffee'].includes(t));
+  const osmOnlyTypes = types.filter((t) => t === 'viewpoint');
 
   // Run both searches in parallel
   const [fsPois, osmPois] = await Promise.all([

@@ -1,14 +1,11 @@
 import type { POI, POIType } from './poi';
 
-const API_KEY = import.meta.env.VITE_FOURSQUARE_API_KEY as string;
-const BASE_URL = 'https://places-api.foursquare.com/places/search';
-
 // Query terms for each POI type
 const QUERY_TERMS: Record<POIType, string[]> = {
-  brewery: ['brewery', 'taphouse', 'brewing'],
+  brewery: ['brewery', 'taphouse'],
   coffee: ['coffee', 'cafe'],
   viewpoint: ['viewpoint', 'scenic lookout'],
-  park: ['park', 'nature reserve', 'trail'],
+  park: ['park', 'nature reserve'],
 };
 
 export async function searchFoursquare(
@@ -16,19 +13,18 @@ export async function searchFoursquare(
   types: POIType[],
   radiusMeters = 10000
 ): Promise<POI[]> {
-  if (!API_KEY || types.length === 0) return [];
+  if (types.length === 0) return [];
 
   const radius = Math.min(radiusMeters, 50000);
-  console.log('[Foursquare] Searching:', { center, types, radiusMeters, hasApiKey: !!API_KEY });
   const allPois: POI[] = [];
   const seen = new Set<string>();
 
-  // Run separate queries per type for accurate results
+  // Build all queries
   const queries = types.flatMap((type) =>
     QUERY_TERMS[type].map((query) => ({ query, type }))
   );
 
-  // Run queries in parallel (max 4 at a time)
+  // Run queries in parallel via our serverless proxy
   const results = await Promise.allSettled(
     queries.map(async ({ query, type }) => {
       const params = new URLSearchParams({
@@ -38,17 +34,10 @@ export async function searchFoursquare(
         limit: '20',
       });
 
-      const res = await fetch(`${BASE_URL}?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${API_KEY}`,
-          'Accept': 'application/json',
-          'X-Places-Api-Version': '2025-06-17',
-        },
-      });
+      const res = await fetch(`/api/foursquare?${params}`);
 
       if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        console.error('[Foursquare] API error:', res.status, errText);
+        console.error('[Foursquare] Proxy error:', res.status);
         return [];
       }
 
@@ -66,7 +55,6 @@ export async function searchFoursquare(
       const name = r.name as string | undefined;
       if (!lat || !lng || !name) continue;
 
-      // Dedupe by name
       const key = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -79,5 +67,6 @@ export async function searchFoursquare(
     }
   }
 
+  console.log('[Foursquare] Found:', allPois.length, 'POIs');
   return allPois;
 }
