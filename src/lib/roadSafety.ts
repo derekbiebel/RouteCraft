@@ -26,8 +26,8 @@ export interface RoadSafetyReport {
 }
 
 const OVERPASS_API = 'https://overpass-api.de/api/interpreter';
-const SAMPLE_INTERVAL_METERS = 200;
-const BUFFER_METERS = 50;
+const SAMPLE_INTERVAL_METERS = 500; // Sample less frequently to reduce bbox size
+const BUFFER_METERS = 30;
 
 /**
  * Haversine distance between two [lng, lat] points in meters.
@@ -126,7 +126,7 @@ function buildOverpassQuery(bbox: [number, number, number, number]): string {
   const bboxStr = `${south},${west},${north},${east}`;
 
   return `
-[out:json][timeout:30][bbox:${bboxStr}];
+[out:json][timeout:10][bbox:${bboxStr}];
 way["highway"~"^(residential|living_street|service|cycleway|path|track|tertiary|tertiary_link|unclassified|secondary|secondary_link|primary|primary_link|trunk|trunk_link)$"];
 out tags;
 `.trim();

@@ -119,13 +119,26 @@ export function RouteGenerator() {
         el.style.zIndex = '100';
         el.innerHTML = `<div data-poi-id="${poi.id}" style="background:${config.bg};opacity:0.8;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);font-size:16px;transition:all 0.15s">${config.emoji}</div>`;
 
+        const popup = new maplibregl.Popup({ offset: 18, closeButton: false, closeOnClick: false })
+          .setHTML(`<div style="font-family:DM Sans,sans-serif;padding:2px 0"><strong style="font-size:13px">${poi.name}</strong><br/><span style="font-size:11px;color:#666">${config.label}</span></div>`);
+
         const marker = new maplibregl.Marker({ element: el })
           .setLngLat([poi.lng, poi.lat])
+          .setPopup(popup)
           .addTo(mapRef.current!);
 
+        // Show name on hover
+        el.addEventListener('mouseenter', () => marker.togglePopup());
+        el.addEventListener('mouseleave', () => { if (marker.getPopup().isOpen()) marker.togglePopup(); });
+
+        // Click to select and re-route
         el.addEventListener('click', (e) => {
           e.stopPropagation();
           togglePoiSelection(poi.id, el);
+          // Auto re-generate if a route already exists
+          if (useRouteStore.getState().route) {
+            setTimeout(() => handleGenerate(roundTripSeed), 100);
+          }
         });
 
         return marker;
@@ -704,7 +717,13 @@ export function RouteGenerator() {
                 return (
                   <button
                     key={p.id}
-                    onClick={() => togglePoiSelection(p.id)}
+                    onClick={() => {
+                      togglePoiSelection(p.id);
+                      // Auto re-generate if a route exists
+                      if (useRouteStore.getState().route) {
+                        setTimeout(() => handleGenerate(roundTripSeed), 100);
+                      }
+                    }}
                     className={`flex items-center gap-1.5 w-full text-left text-xs rounded px-2 py-1.5 transition-colors ${
                       isSelected
                         ? 'bg-green-50 border border-green-300 font-semibold'
