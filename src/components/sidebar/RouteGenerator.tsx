@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shuffle, Play, Loader2, Coffee, Beer, Clock, Ruler, Mountain, Trees } from 'lucide-react';
+import { Shuffle, Play, Loader2, Coffee, Beer, Clock, Ruler, Mountain, Trees, Navigation, CornerDownLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,7 @@ export function RouteGenerator() {
   const { activity, setActivity, surfacePreference, setSurfacePreference, units,
           avoidances, setAvoidances, ftp, weight, thresholdPace, preferBikeLanes, setPreferBikeLanes } = prefs;
 
+  const [routeType, setRouteType] = useState<'roundtrip' | 'pointtopoint'>('roundtrip');
   const [mode, setMode] = useState<GenerateMode>('distance');
   const [targetDistance, setTargetDistance] = useState(5);
   const [targetTime, setTargetTime] = useState(60); // minutes
@@ -178,9 +179,9 @@ export function RouteGenerator() {
   const handleGenerate = async (seed?: number) => {
     if (!startPoint) return;
     clearRouteStopMarkers();
+    clearPreviewMarkers();
     setStops([]);
 
-    // Store elevation goal for display in RouteStats
     const goalMeters = elevationGoal > 0 ? (units === 'imperial' ? elevationGoal / 3.28084 : elevationGoal) : 0;
     setStoreElevGoal(goalMeters);
 
@@ -188,70 +189,137 @@ export function RouteGenerator() {
       ? fromDisplayDistance(targetDistance, units)
       : estimatedDistance;
 
-    // Use user-selected stops if any
-    const userSelectedStops = availablePois.filter((p) => selectedStopIds.has(p.id));
+    const profile = getORSProfile(activity, surfacePreference, preferBikeLanes);
+    const wantStops = includeCoffee || includeBrewery || includeViewpoint || includePark;
 
-    if (userSelectedStops.length > 0) {
-      // Clear preview markers since we'll show route stop markers
-      clearPreviewMarkers();
+    // Determine which stops to use: user-selected markers, or auto-find
+    let stopsToRoute: POI[] = [];
 
-      // Sort by angle from start for a logical loop
-      const stopsWithAngle = userSelectedStops.map((s) => ({
-        stop: s,
-        angle: Math.atan2(s.lat - startPoint[1], s.lng - startPoint[0]),
-      }));
-      stopsWithAngle.sort((a, b) => a.angle - b.angle);
-      const orderedStops = stopsWithAngle.map((s) => s.stop);
+    if (wantStops) {
+      const userSelected = availablePois.filter((p) => selectedStopIds.has(p.id));
 
-      const viaPoints: [number, number][] = orderedStops.map((s) => [s.lng, s.lat]);
-      const profile = getORSProfile(activity, surfacePreference, preferBikeLanes);
-      setLoading(true);
+      if (userSelected.length > 0) {
+        // User manually selected specific stops
+        stopsToRoute = userSelected;
+      } else {
+        // Auto-find: search for POIs and pick the closest one per type
+        const searchTypes: POIType[] = [];
+        if (includeCoffee) searchTypes.push('coffee');
+        if (includeBrewery) searchTypes.push('brewery');
+        if (includeViewpoint) searchTypes.push('viewpoint');
+        if (includePark) searchTypes.push('park');
 
-      try {
-        const rerouted = await getDirections(
-          [startPoint, ...viaPoints, startPoint],
-          profile,
-          avoidances
-        );
-        setRoute(rerouted);
-        renderOnMap(rerouted);
-
-        const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
-          current: maplibregl.Map | null;
-        };
-        if (mapRef?.current) {
-          const markers = orderedStops.map((p) => {
-            const config = markerConfig[p.type] ?? markerConfig.coffee;
-            const el = document.createElement('div');
-            el.className = 'poi-marker';
-            el.innerHTML = `<div style="background:${config.bg};border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:3px solid #22c55e;box-shadow:0 2px 6px rgba(0,0,0,0.3);font-size:16px">${config.emoji}</div>`;
-            return new maplibregl.Marker({ element: el })
-              .setLngLat([p.lng, p.lat])
-              .setPopup(new maplibregl.Popup({ offset: 18 }).setHTML(
-                `<div style="font-family:DM Sans,sans-serif;padding:2px 0"><strong style="font-size:13px">${p.name}</strong><br/><span style="font-size:11px;color:#666">${config.label}</span></div>`
-              ))
-              .addTo(mapRef.current!);
-          });
-          setRouteStopMarkers(markers);
-          setStops(orderedStops);
+        setLoading(true);
+        try {
+          const pois = await findPOIsNearPoint(startPoint, searchTypes, Math.max(10000, meters));
+          // Pick the closest one per type
+          for (const type of searchTypes) {
+            const match = pois.find((p) => p.type === type);
+            if (match) stopsToRoute.push(match);
+          }
+        } catch {
+          // Continue without stops
         }
-      } catch {
-        const fallback = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
-        if (fallback) renderOnMap(fallback);
-      } finally {
-        setLoading(false);
       }
-      return;
     }
 
-    // No stops selected — generate a normal round trip
-    clearPreviewMarkers();
-    const result = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
-    if (result) renderOnMap(result);
+    // Sort stops by angle from start for a logical loop
+    if (stopsToRoute.length > 0) {
+      const sorted = stopsToRoute
+        .map((s) => ({ stop: s, angle: Math.atan2(s.lat - startPoint[1], s.lng - startPoint[0]) }))
+        .sort((a, b) => a.angle - b.angle)
+        .map((s) => s.stop);
+      stopsToRoute = sorted;
+    }
+
+    setLoading(true);
+    try {
+      let routeResult;
+
+      if (stopsToRoute.length > 0) {
+        // Route through stops
+        const viaPoints: [number, number][] = stopsToRoute.map((s) => [s.lng, s.lat]);
+        const coords: [number, number][] = routeType === 'roundtrip'
+          ? [startPoint, ...viaPoints, startPoint]
+          : [startPoint, ...viaPoints];
+
+        routeResult = await getDirections(coords, profile, avoidances);
+      } else if (routeType === 'roundtrip') {
+        // Plain round trip
+        routeResult = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
+      } else {
+        // Point-to-point with no stops — need at least 2 waypoints
+        // Generate a round trip but only use half (outbound leg)
+        routeResult = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
+      }
+
+      if (routeResult) {
+        setRoute(routeResult);
+        renderOnMap(routeResult);
+
+        // Add stop markers
+        if (stopsToRoute.length > 0) {
+          const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
+            current: maplibregl.Map | null;
+          };
+          if (mapRef?.current) {
+            const markers = stopsToRoute.map((p) => {
+              const config = markerConfig[p.type] ?? markerConfig.coffee;
+              const el = document.createElement('div');
+              el.className = 'poi-marker';
+              el.innerHTML = `<div style="background:${config.bg};border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:3px solid #22c55e;box-shadow:0 2px 6px rgba(0,0,0,0.3);font-size:16px">${config.emoji}</div>`;
+              return new maplibregl.Marker({ element: el })
+                .setLngLat([p.lng, p.lat])
+                .setPopup(new maplibregl.Popup({ offset: 18 }).setHTML(
+                  `<div style="font-family:DM Sans,sans-serif;padding:2px 0"><strong style="font-size:13px">${p.name}</strong><br/><span style="font-size:11px;color:#666">${config.label}</span></div>`
+                ))
+                .addTo(mapRef.current!);
+            });
+            setRouteStopMarkers(markers);
+            setStops(stopsToRoute);
+          }
+        }
+      }
+    } catch {
+      // Last resort fallback
+      const fallback = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
+      if (fallback) renderOnMap(fallback);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="space-y-4">
+      {/* Route type */}
+      <div>
+        <p className="text-xs font-medium text-muted-foreground mb-1.5">Route Type</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            onClick={() => setRouteType('roundtrip')}
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              routeType === 'roundtrip'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-secondary text-secondary-foreground hover:bg-accent'
+            }`}
+          >
+            <CornerDownLeft className="size-3.5" />
+            Round Trip
+          </button>
+          <button
+            onClick={() => setRouteType('pointtopoint')}
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              routeType === 'pointtopoint'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-secondary text-secondary-foreground hover:bg-accent'
+            }`}
+          >
+            <Navigation className="size-3.5" />
+            A → B
+          </button>
+        </div>
+      </div>
+
       {/* Activity toggle */}
       <div>
         <p className="text-xs font-medium text-muted-foreground mb-1.5">Activity</p>
