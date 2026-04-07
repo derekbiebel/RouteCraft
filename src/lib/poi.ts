@@ -1,3 +1,5 @@
+import { searchFoursquare } from './foursquare';
+
 export type POIType = 'brewery' | 'coffee' | 'viewpoint' | 'park';
 
 export interface POI {
@@ -121,7 +123,6 @@ export async function findPOIsNearPoint(
   if (types.length === 0) return [];
 
   // Use Foursquare for breweries, coffee, and parks
-  const { searchFoursquare } = await import('./foursquare');
   const foursquareTypes = types.filter((t) => ['brewery', 'coffee', 'park'].includes(t));
   const osmOnlyTypes = types.filter((t) => !['brewery', 'coffee'].includes(t));
 

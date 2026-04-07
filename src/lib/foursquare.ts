@@ -44,22 +44,36 @@ interface FoursquareResult {
   distance?: number;
 }
 
-function categorizeResult(result: FoursquareResult, searchTypes: POIType[]): POIType {
+function categorizeResult(result: FoursquareResult, searchTypes: POIType[]): POIType | null {
   const catIds = result.categories.map((c) => c.fsq_category_id ?? c.id ?? '');
   const catNames = result.categories.map((c) => c.name.toLowerCase());
 
+  // Match by Foursquare category ID
   for (const type of searchTypes) {
     const ids = EXTRA_CATEGORIES[type] ?? [CATEGORY_MAP[type]];
     if (catIds.some((id) => ids.includes(id))) return type;
   }
 
-  // Fallback: match by name
-  if (catNames.some((n) => n.includes('brew') || n.includes('beer'))) return 'brewery';
-  if (catNames.some((n) => n.includes('coffee') || n.includes('café') || n.includes('cafe'))) return 'coffee';
-  if (catNames.some((n) => n.includes('park') || n.includes('trail'))) return 'park';
-  if (catNames.some((n) => n.includes('viewpoint') || n.includes('lookout') || n.includes('scenic'))) return 'viewpoint';
+  // Fallback: match by category name
+  const nameMatches: Record<string, POIType> = {};
+  if (catNames.some((n) => n.includes('brew') || n.includes('beer'))) nameMatches['brewery'] = 'brewery';
+  if (catNames.some((n) => n.includes('coffee') || n.includes('café') || n.includes('cafe'))) nameMatches['coffee'] = 'coffee';
+  if (catNames.some((n) => n.includes('park') || n.includes('trail') || n.includes('nature'))) nameMatches['park'] = 'park';
+  if (catNames.some((n) => n.includes('viewpoint') || n.includes('lookout') || n.includes('scenic'))) nameMatches['viewpoint'] = 'viewpoint';
 
-  return searchTypes[0];
+  // Only return if it matches a requested type
+  for (const type of searchTypes) {
+    if (nameMatches[type]) return type;
+  }
+
+  // Also check the place name itself
+  const placeName = result.name.toLowerCase();
+  for (const type of searchTypes) {
+    if (type === 'brewery' && (placeName.includes('brew') || placeName.includes('beer') || placeName.includes('tap'))) return type;
+    if (type === 'coffee' && (placeName.includes('coffee') || placeName.includes('cafe') || placeName.includes('café'))) return type;
+  }
+
+  return null; // Doesn't match any requested type
 }
 
 export async function searchFoursquare(
@@ -98,8 +112,8 @@ export async function searchFoursquare(
     const pois: POI[] = [];
 
     for (const r of results) {
-      const lat = r.geocodes?.main?.latitude ?? r.latitude;
-      const lng = r.geocodes?.main?.longitude ?? r.longitude;
+      const lat = r.latitude ?? r.geocodes?.main?.latitude;
+      const lng = r.longitude ?? r.geocodes?.main?.longitude;
       if (!lat || !lng || !r.name) continue;
 
       // Dedupe
@@ -108,6 +122,8 @@ export async function searchFoursquare(
       seen.add(key);
 
       const type = categorizeResult(r, types);
+      // Skip results that don't actually match a requested type
+      if (!type) continue;
       const id = parseInt((r.fsq_place_id ?? r.fsq_id ?? '0').replace(/\D/g, '').slice(-8) || '0', 16) || Math.random() * 1e9;
 
       pois.push({ id, name: r.name, type, lat, lng });
