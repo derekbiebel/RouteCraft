@@ -110,7 +110,8 @@ export async function findPOIsAlongRoute(
 
 /**
  * Search for POIs near a single point within a radius.
- * Used to find stops BEFORE generating a route.
+ * Uses Foursquare as primary source (better business data),
+ * falls back to OSM/Overpass for viewpoints and parks.
  */
 export async function findPOIsNearPoint(
   center: [number, number], // [lng, lat]
@@ -119,6 +120,54 @@ export async function findPOIsNearPoint(
 ): Promise<POI[]> {
   if (types.length === 0) return [];
 
+  // Use Foursquare for breweries, coffee, and parks
+  const { searchFoursquare } = await import('./foursquare');
+  const foursquareTypes = types.filter((t) => ['brewery', 'coffee', 'park'].includes(t));
+  const osmOnlyTypes = types.filter((t) => !['brewery', 'coffee'].includes(t));
+
+  // Run both searches in parallel
+  const [fsPois, osmPois] = await Promise.all([
+    foursquareTypes.length > 0 ? searchFoursquare(center, foursquareTypes, radiusMeters) : Promise.resolve([]),
+    osmOnlyTypes.length > 0 ? searchOSMNearPoint(center, osmOnlyTypes, radiusMeters) : Promise.resolve([]),
+  ]);
+
+  // Merge and dedupe by name similarity
+  const seen = new Set<string>();
+  const merged: POI[] = [];
+
+  // Foursquare results first (higher quality)
+  for (const poi of fsPois) {
+    const key = poi.name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(poi);
+  }
+
+  // Then OSM results that aren't duplicates
+  for (const poi of osmPois) {
+    const key = poi.name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(poi);
+  }
+
+  // Sort by distance from center
+  merged.sort((a, b) =>
+    haversine(a.lat, a.lng, center[1], center[0]) -
+    haversine(b.lat, b.lng, center[1], center[0])
+  );
+
+  return merged;
+}
+
+/**
+ * OSM/Overpass search near a point (used for viewpoints, parks, and as fallback).
+ */
+async function searchOSMNearPoint(
+  center: [number, number],
+  types: POIType[],
+  radiusMeters: number
+): Promise<POI[]> {
   const bufferDeg = radiusMeters / 111000;
   const south = center[1] - bufferDeg;
   const north = center[1] + bufferDeg;
@@ -128,21 +177,15 @@ export async function findPOIsNearPoint(
 
   const filters: string[] = [];
   if (types.includes('brewery')) {
-    // Search both nodes and ways for all brewery-related tags
     for (const el of ['node', 'way']) {
       filters.push(`${el}["craft"="brewery"](${bbox});`);
-      filters.push(`${el}["amenity"="pub"]["microbrewery"="yes"](${bbox});`);
-      filters.push(`${el}["amenity"="bar"]["craft"="brewery"](${bbox});`);
-      filters.push(`${el}["amenity"="biergarten"](${bbox});`);
       filters.push(`${el}["microbrewery"="yes"](${bbox});`);
       filters.push(`${el}["brewery"](${bbox});`);
     }
   }
   if (types.includes('coffee')) {
-    // Search both nodes and ways — amenity=cafe covers most coffee shops
     for (const el of ['node', 'way']) {
       filters.push(`${el}["amenity"="cafe"](${bbox});`);
-      filters.push(`${el}["cuisine"="coffee"](${bbox});`);
       filters.push(`${el}["shop"="coffee"](${bbox});`);
     }
   }
@@ -158,54 +201,54 @@ export async function findPOIsNearPoint(
     filters.push(`relation["boundary"="national_park"](${bbox});`);
   }
 
+  if (filters.length === 0) return [];
+
   const query = `[out:json][timeout:15];(${filters.join('')});out body center;`;
 
-  const res = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    body: `data=${encodeURIComponent(query)}`,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: `data=${encodeURIComponent(query)}`,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
 
-  if (!res.ok) return [];
-  const data = await res.json();
+    if (!res.ok) return [];
+    const data = await res.json();
 
-  const seen = new Set<string>();
-  const pois: POI[] = [];
+    const pois: POI[] = [];
+    const seen = new Set<string>();
 
-  for (const el of data.elements ?? []) {
-    const lat = el.lat ?? el.center?.lat;
-    const lon = el.lon ?? el.center?.lon;
-    if (!lat || !lon) continue;
-    const name = el.tags?.name;
-    if (!name) continue;
+    for (const el of data.elements ?? []) {
+      const lat = el.lat ?? el.center?.lat;
+      const lon = el.lon ?? el.center?.lon;
+      if (!lat || !lon) continue;
+      const name = el.tags?.name;
+      if (!name) continue;
 
-    const key = `${name}-${lat.toFixed(3)}-${lon.toFixed(3)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+      const key = `${name}-${lat.toFixed(3)}-${lon.toFixed(3)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
 
-    const isBrewer = el.tags?.craft === 'brewery' || el.tags?.microbrewery === 'yes' || el.tags?.brewery;
-    const isViewpoint = el.tags?.tourism === 'viewpoint';
-    const isPark = el.tags?.leisure === 'park' || el.tags?.boundary === 'national_park' || el.tags?.leisure === 'nature_reserve';
+      const isBrewer = el.tags?.craft === 'brewery' || el.tags?.microbrewery === 'yes' || el.tags?.brewery;
+      const isViewpoint = el.tags?.tourism === 'viewpoint';
+      const isPark = el.tags?.leisure === 'park' || el.tags?.boundary === 'national_park' || el.tags?.leisure === 'nature_reserve';
 
-    let type: POIType;
-    if (isBrewer) type = 'brewery';
-    else if (isViewpoint) type = 'viewpoint';
-    else if (isPark) type = 'park';
-    else type = 'coffee';
+      let type: POIType;
+      if (isBrewer) type = 'brewery';
+      else if (isViewpoint) type = 'viewpoint';
+      else if (isPark) type = 'park';
+      else type = 'coffee';
 
-    const dist = haversine(lat, lon, center[1], center[0]);
-    if (dist <= radiusMeters) {
-      pois.push({ id: el.id, name, type, lat, lng: lon });
+      const dist = haversine(lat, lon, center[1], center[0]);
+      if (dist <= radiusMeters) {
+        pois.push({ id: el.id, name, type, lat, lng: lon });
+      }
     }
+
+    return pois;
+  } catch {
+    return [];
   }
-
-  // Sort by distance from center
-  pois.sort((a, b) =>
-    haversine(a.lat, a.lng, center[1], center[0]) -
-    haversine(b.lat, b.lng, center[1], center[0])
-  );
-
-  return pois;
 }
 
 function isNearRoute(
