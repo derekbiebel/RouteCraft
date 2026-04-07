@@ -194,7 +194,7 @@ export function RouteGenerator() {
   const handleGenerate = async (seed?: number) => {
     if (!startPoint) return;
     clearRouteStopMarkers();
-    clearPreviewMarkers();
+    // DON'T clear preview markers yet — we need selectedStopIds to still reference them
     setStops([]);
 
     const goalMeters = elevationGoal > 0 ? (units === 'imperial' ? elevationGoal / 3.28084 : elevationGoal) : 0;
@@ -269,10 +269,13 @@ export function RouteGenerator() {
       }
 
       if (routeResult) {
+        // Now clear preview markers since we're showing the final route
+        clearPreviewMarkers();
+
         setRoute(routeResult);
         renderOnMap(routeResult);
 
-        // Add stop markers
+        // Add stop markers on the generated route
         if (stopsToRoute.length > 0) {
           const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
             current: maplibregl.Map | null;
@@ -282,11 +285,12 @@ export function RouteGenerator() {
               const config = markerConfig[p.type] ?? markerConfig.coffee;
               const el = document.createElement('div');
               el.className = 'poi-marker';
-              el.innerHTML = `<div style="background:${config.bg};border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:3px solid #22c55e;box-shadow:0 2px 6px rgba(0,0,0,0.3);font-size:16px">${config.emoji}</div>`;
+              el.style.zIndex = '200';
+              el.innerHTML = `<div style="background:${config.bg};border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:3px solid #22c55e;box-shadow:0 3px 8px rgba(0,0,0,0.4);font-size:18px">${config.emoji}</div>`;
               return new maplibregl.Marker({ element: el })
                 .setLngLat([p.lng, p.lat])
-                .setPopup(new maplibregl.Popup({ offset: 18 }).setHTML(
-                  `<div style="font-family:DM Sans,sans-serif;padding:2px 0"><strong style="font-size:13px">${p.name}</strong><br/><span style="font-size:11px;color:#666">${config.label}</span></div>`
+                .setPopup(new maplibregl.Popup({ offset: 20 }).setHTML(
+                  `<div style="font-family:DM Sans,sans-serif;padding:4px 0"><strong style="font-size:14px">${p.name}</strong><br/><span style="font-size:12px;color:#666">${config.label} — on your route</span></div>`
                 ))
                 .addTo(mapRef.current!);
             });
@@ -296,7 +300,7 @@ export function RouteGenerator() {
         }
       }
     } catch {
-      // Last resort fallback
+      clearPreviewMarkers();
       const fallback = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
       if (fallback) renderOnMap(fallback);
     } finally {

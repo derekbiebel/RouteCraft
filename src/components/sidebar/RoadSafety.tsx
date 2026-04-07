@@ -18,9 +18,12 @@ export function RoadSafety() {
     const allCoords = route.segments.flatMap((seg) => seg.coordinates);
 
     try {
+      console.log('[RoadSafety] Analyzing', allCoords.length, 'coordinates...');
       const result = await analyzeRouteSafety(allCoords);
+      console.log('[RoadSafety] Result:', result.overallScore, result.overallLabel, result.segments.length, 'segments');
       setReport(result);
-    } catch {
+    } catch (err) {
+      console.error('[RoadSafety] Failed:', err);
       setError(true);
     } finally {
       setLoading(false);
