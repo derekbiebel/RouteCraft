@@ -194,7 +194,7 @@ export function RouteGenerator() {
   const handleGenerate = async (seed?: number) => {
     if (!startPoint) return;
     clearRouteStopMarkers();
-    // DON'T clear preview markers yet — we need selectedStopIds to still reference them
+    // Keep preview markers visible — user can click different ones to re-route
     setStops([]);
 
     const goalMeters = elevationGoal > 0 ? (units === 'imperial' ? elevationGoal / 3.28084 : elevationGoal) : 0;
@@ -251,32 +251,63 @@ export function RouteGenerator() {
     try {
       let routeResult;
 
-      if (stopsToRoute.length > 0) {
-        // Route through stops
-        const viaPoints: [number, number][] = stopsToRoute.map((s) => [s.lng, s.lat]);
-        const coords: [number, number][] = routeType === 'roundtrip'
-          ? [startPoint, ...viaPoints, startPoint]
-          : [startPoint, ...viaPoints];
+      if (stopsToRoute.length > 0 && routeType === 'roundtrip') {
+        // Generate a full-distance round trip first to get a far-out point
+        const baseRoute = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
 
-        routeResult = await getDirections(coords, profile, avoidances);
+        if (baseRoute) {
+          // Find the point on the base route that's farthest from start (the "turnaround")
+          const allCoords = baseRoute.segments.flatMap((seg) => seg.coordinates);
+          let farthestIdx = 0;
+          let farthestDist = 0;
+          for (let i = 0; i < allCoords.length; i++) {
+            const d = Math.hypot(allCoords[i][1] - startPoint[1], allCoords[i][0] - startPoint[0]);
+            if (d > farthestDist) {
+              farthestDist = d;
+              farthestIdx = i;
+            }
+          }
+          const farPoint: [number, number] = [allCoords[farthestIdx][0], allCoords[farthestIdx][1]];
+
+          // Build route: start → stops (sorted by proximity to start) → far point → start
+          // This creates a full loop that detours through the stops
+          const viaPoints: [number, number][] = stopsToRoute.map((s) => [s.lng, s.lat]);
+
+          // Sort stops: ones closer to start come first, far point is the turnaround
+          const coords: [number, number][] = [startPoint, ...viaPoints, farPoint, startPoint];
+          routeResult = await getDirections(coords, profile, avoidances);
+        }
+      } else if (stopsToRoute.length > 0 && routeType === 'pointtopoint') {
+        const viaPoints: [number, number][] = stopsToRoute.map((s) => [s.lng, s.lat]);
+        routeResult = await getDirections([startPoint, ...viaPoints], profile, avoidances);
       } else if (routeType === 'roundtrip') {
-        // Plain round trip
         routeResult = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
       } else {
-        // Point-to-point with no stops — need at least 2 waypoints
-        // Generate a round trip but only use half (outbound leg)
         routeResult = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
       }
 
       if (routeResult) {
-        // Now clear preview markers since we're showing the final route
-        clearPreviewMarkers();
-
         setRoute(routeResult);
         renderOnMap(routeResult);
 
-        // Add stop markers on the generated route
-        if (stopsToRoute.length > 0) {
+        // Keep all preview markers visible so user can click a different one
+        // Just highlight the selected ones
+        previewMarkers.forEach((m) => {
+          const el = m.getElement();
+          const inner = el.querySelector('div') as HTMLElement | null;
+          if (!inner) return;
+          const poiId = inner.getAttribute('data-poi-id');
+          if (poiId && stopsToRoute.some((s) => String(s.id) === poiId)) {
+            inner.style.opacity = '1';
+            inner.style.width = '44px';
+            inner.style.height = '44px';
+            inner.style.fontSize = '22px';
+            inner.style.border = '4px solid #22c55e';
+          }
+        });
+
+        // Also add route-specific stop markers if preview markers don't exist
+        if (previewMarkers.length === 0 && stopsToRoute.length > 0) {
           const mapRef = (window as unknown as Record<string, unknown>).__routecraftMap as {
             current: maplibregl.Map | null;
           };
@@ -295,12 +326,13 @@ export function RouteGenerator() {
                 .addTo(mapRef.current!);
             });
             setRouteStopMarkers(markers);
-            setStops(stopsToRoute);
           }
         }
+
+        setStops(stopsToRoute);
       }
-    } catch {
-      clearPreviewMarkers();
+    } catch (err) {
+      console.error('[RouteGenerator] Failed:', err);
       const fallback = await generateRoundTrip(startPoint, meters, activity, surfacePreference, seed, avoidances);
       if (fallback) renderOnMap(fallback);
     } finally {
