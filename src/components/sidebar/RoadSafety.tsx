@@ -93,12 +93,14 @@ export function RoadSafety() {
 
           {/* Summary stats */}
           <div className="grid grid-cols-2 gap-2">
-            <StatRow label="Has Shoulder" value={`${report.summary.hasShoulderPercent}%`} good={report.summary.hasShoulderPercent > 50} />
-            <StatRow label="Bike Lane" value={`${report.summary.hasBikeLanePercent}%`} good={report.summary.hasBikeLanePercent > 30} />
-            <StatRow label="Residential" value={`${report.summary.residentialPercent}%`} good={report.summary.residentialPercent > 50} />
-            <StatRow label="Primary/Trunk" value={`${report.summary.primaryPercent}%`} good={report.summary.primaryPercent < 20} />
+            <StatRow label="Bike Lane / Path" value={`${report.summary.hasBikeLanePercent}%`} good={report.summary.hasBikeLanePercent > 30} />
+            <StatRow label="Quiet Roads" value={`${report.summary.residentialPercent}%`} good={report.summary.residentialPercent > 50} />
+            <StatRow label="Busy Roads" value={`${report.summary.primaryPercent}%`} good={report.summary.primaryPercent < 20} />
             {report.summary.avgMaxSpeed !== null && (
               <StatRow label="Avg Speed Limit" value={`${report.summary.avgMaxSpeed} km/h`} good={report.summary.avgMaxSpeed < 50} />
+            )}
+            {report.summary.hasShoulderPercent > 0 && (
+              <StatRow label="Has Shoulder" value={`${report.summary.hasShoulderPercent}%`} good={report.summary.hasShoulderPercent > 50} />
             )}
           </div>
         </>
