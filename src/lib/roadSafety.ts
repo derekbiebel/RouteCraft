@@ -53,7 +53,8 @@ function haversineDistance(
  * Always includes the first and last point.
  */
 function sampleCoordinates(
-  coordinates: [number, number, number][]
+  coordinates: [number, number, number][],
+  interval = SAMPLE_INTERVAL_METERS
 ): [number, number][] {
   if (coordinates.length === 0) return [];
   if (coordinates.length === 1) return [[coordinates[0][0], coordinates[0][1]]];
@@ -66,7 +67,7 @@ function sampleCoordinates(
     const curr: [number, number] = [coordinates[i][0], coordinates[i][1]];
     accumulatedDist += haversineDistance(prev, curr);
 
-    if (accumulatedDist >= SAMPLE_INTERVAL_METERS) {
+    if (accumulatedDist >= interval) {
       sampled.push(curr);
       accumulatedDist = 0;
     }
@@ -337,14 +338,21 @@ export async function analyzeRouteSafety(
     };
   }
 
-  // 1. Sample coordinates along the route
-  const sampled = sampleCoordinates(coordinates);
+  // 1. Sample coordinates along the route (every 1km for long routes)
+  const routeLengthEstimate = coordinates.length * 10; // rough meters
+  const sampleInterval = routeLengthEstimate > 30000 ? 1000 : SAMPLE_INTERVAL_METERS;
+  const sampled = sampleCoordinates(coordinates, sampleInterval);
 
-  // 2. Compute bounding box with buffer
-  const bbox = computeBBox(sampled, BUFFER_METERS);
+  // Limit to 50 sample points max to keep the query small
+  const limitedSamples = sampled.length > 50
+    ? sampled.filter((_, i) => i % Math.ceil(sampled.length / 50) === 0)
+    : sampled;
 
-  // 3. Build and execute the Overpass query
-  const query = buildOverpassQuery(bbox);
+  // 2. Use Overpass "around" filter — searches within radius of specific points
+  // This is much faster than a giant bounding box
+  const coordStr = limitedSamples.map(([lng, lat]) => `${lat},${lng}`).join(',');
+  const query = `[out:json][timeout:10];way["highway"~"^(residential|living_street|service|cycleway|path|track|tertiary|tertiary_link|unclassified|secondary|secondary_link|primary|primary_link|trunk|trunk_link)$"](around:${BUFFER_METERS},${coordStr});out tags;`;
+
   const data = await queryOverpass(query);
 
   // 4. Score each road segment
