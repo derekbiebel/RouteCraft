@@ -86,53 +86,6 @@ function sampleCoordinates(
   return sampled;
 }
 
-/**
- * Compute the bounding box of the sampled points with a buffer in degrees.
- * Returns [south, west, north, east] for Overpass bbox format.
- */
-function computeBBox(
-  points: [number, number][],
-  bufferMeters: number
-): [number, number, number, number] {
-  let minLat = Infinity;
-  let maxLat = -Infinity;
-  let minLng = Infinity;
-  let maxLng = -Infinity;
-
-  for (const [lng, lat] of points) {
-    if (lat < minLat) minLat = lat;
-    if (lat > maxLat) maxLat = lat;
-    if (lng < minLng) minLng = lng;
-    if (lng > maxLng) maxLng = lng;
-  }
-
-  // Approximate degrees for the buffer
-  const latBuffer = bufferMeters / 111_320;
-  const lngBuffer =
-    bufferMeters / (111_320 * Math.cos(((minLat + maxLat) / 2) * (Math.PI / 180)));
-
-  return [
-    minLat - latBuffer,
-    minLng - lngBuffer,
-    maxLat + latBuffer,
-    maxLng + lngBuffer,
-  ];
-}
-
-/**
- * Build an Overpass QL query for highway ways within the bounding box.
- */
-function buildOverpassQuery(bbox: [number, number, number, number]): string {
-  const [south, west, north, east] = bbox;
-  const bboxStr = `${south},${west},${north},${east}`;
-
-  return `
-[out:json][timeout:10][bbox:${bboxStr}];
-way["highway"~"^(residential|living_street|service|cycleway|path|track|tertiary|tertiary_link|unclassified|secondary|secondary_link|primary|primary_link|trunk|trunk_link)$"];
-out tags;
-`.trim();
-}
-
 interface OverpassElement {
   type: string;
   id: number;
