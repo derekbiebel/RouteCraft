@@ -38,7 +38,7 @@ export function RoadSafety() {
       return;
     }
 
-    const timer = setTimeout(analyze, 2000); // 2s delay to let other Overpass calls finish
+    const timer = setTimeout(analyze, 5000); // 5s delay — Overpass rate limits aggressively
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route]);

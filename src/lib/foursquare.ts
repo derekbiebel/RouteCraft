@@ -4,8 +4,8 @@ import type { POI, POIType } from './poi';
 const QUERY_TERMS: Record<POIType, string[]> = {
   brewery: ['brewery', 'taphouse'],
   coffee: ['coffee', 'cafe'],
-  viewpoint: ['viewpoint', 'scenic lookout'],
-  park: ['park', 'nature reserve'],
+  viewpoint: ['scenic overlook', 'viewpoint', 'trailhead'],
+  park: ['park', 'nature reserve', 'state park'],
 };
 
 export async function searchFoursquare(

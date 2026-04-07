@@ -122,44 +122,16 @@ export async function findPOIsNearPoint(
 ): Promise<POI[]> {
   if (types.length === 0) return [];
 
-  // Foursquare handles: brewery, coffee, park
-  // OSM handles: viewpoint (not in Foursquare)
-  const foursquareTypes = types.filter((t) => ['brewery', 'coffee', 'park'].includes(t));
-  const osmOnlyTypes = types.filter((t) => t === 'viewpoint');
-
-  // Run both searches in parallel
-  const [fsPois, osmPois] = await Promise.all([
-    foursquareTypes.length > 0 ? searchFoursquare(center, foursquareTypes, radiusMeters) : Promise.resolve([]),
-    osmOnlyTypes.length > 0 ? searchOSMNearPoint(center, osmOnlyTypes, radiusMeters) : Promise.resolve([]),
-  ]);
-
-  // Merge and dedupe by name similarity
-  const seen = new Set<string>();
-  const merged: POI[] = [];
-
-  // Foursquare results first (higher quality)
-  for (const poi of fsPois) {
-    const key = poi.name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(poi);
-  }
-
-  // Then OSM results that aren't duplicates
-  for (const poi of osmPois) {
-    const key = poi.name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(poi);
-  }
+  // Use Foursquare for everything — no Overpass for POIs
+  const pois = await searchFoursquare(center, types, radiusMeters);
 
   // Sort by distance from center
-  merged.sort((a, b) =>
+  pois.sort((a, b) =>
     haversine(a.lat, a.lng, center[1], center[0]) -
     haversine(b.lat, b.lng, center[1], center[0])
   );
 
-  return merged;
+  return pois;
 }
 
 /**
