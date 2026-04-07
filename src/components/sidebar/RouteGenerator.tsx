@@ -116,41 +116,16 @@ export function RouteGenerator() {
         const el = document.createElement('div');
         el.className = 'poi-marker';
         el.style.cursor = 'pointer';
-        el.innerHTML = `<div class="poi-preview-${poi.id}" style="background:${config.bg};opacity:0.5;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px;transition:all 0.2s">${config.emoji}</div>`;
+        el.style.zIndex = '100';
+        el.innerHTML = `<div data-poi-id="${poi.id}" style="background:${config.bg};opacity:0.8;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);font-size:16px;transition:all 0.15s">${config.emoji}</div>`;
 
         const marker = new maplibregl.Marker({ element: el })
           .setLngLat([poi.lng, poi.lat])
-          .setPopup(new maplibregl.Popup({ offset: 16, closeOnClick: false }).setHTML(
-            `<div style="font-family:DM Sans,sans-serif;padding:2px 0">
-              <strong style="font-size:13px">${poi.name}</strong><br/>
-              <span style="font-size:11px;color:#666">${config.label}</span><br/>
-              <span style="font-size:10px;color:#999">Click marker to add to route</span>
-            </div>`
-          ))
           .addTo(mapRef.current!);
 
-        // Click to select/deselect
         el.addEventListener('click', (e) => {
           e.stopPropagation();
-          setSelectedStopIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(poi.id)) {
-              next.delete(poi.id);
-              el.querySelector('div')!.style.opacity = '0.5';
-              el.querySelector('div')!.style.width = '28px';
-              el.querySelector('div')!.style.height = '28px';
-              el.querySelector('div')!.style.fontSize = '14px';
-              el.querySelector('div')!.style.border = '2px solid white';
-            } else {
-              next.add(poi.id);
-              el.querySelector('div')!.style.opacity = '1';
-              el.querySelector('div')!.style.width = '36px';
-              el.querySelector('div')!.style.height = '36px';
-              el.querySelector('div')!.style.fontSize = '18px';
-              el.querySelector('div')!.style.border = '3px solid #22c55e';
-            }
-            return next;
-          });
+          togglePoiSelection(poi.id, el);
         });
 
         return marker;
@@ -162,6 +137,43 @@ export function RouteGenerator() {
     } finally {
       setSearchingPois(false);
     }
+  };
+
+  // Toggle POI selection (used by both map markers and sidebar list)
+  const togglePoiSelection = (poiId: number, markerEl?: HTMLElement) => {
+    setSelectedStopIds((prev) => {
+      const next = new Set(prev);
+      const isSelected = next.has(poiId);
+      if (isSelected) {
+        next.delete(poiId);
+      } else {
+        next.add(poiId);
+      }
+
+      // Update marker visual if provided
+      if (markerEl) {
+        const inner = markerEl.querySelector('div') as HTMLElement | null;
+        if (inner) {
+          inner.style.opacity = isSelected ? '0.8' : '1';
+          inner.style.width = isSelected ? '32px' : '40px';
+          inner.style.height = isSelected ? '32px' : '40px';
+          inner.style.fontSize = isSelected ? '16px' : '20px';
+          inner.style.border = isSelected ? '2px solid white' : '3px solid #22c55e';
+        }
+      }
+
+      // Also update any matching marker on the map
+      document.querySelectorAll(`[data-poi-id="${poiId}"]`).forEach((el) => {
+        const div = el as HTMLElement;
+        div.style.opacity = isSelected ? '0.8' : '1';
+        div.style.width = isSelected ? '32px' : '40px';
+        div.style.height = isSelected ? '32px' : '40px';
+        div.style.fontSize = isSelected ? '16px' : '20px';
+        div.style.border = isSelected ? '2px solid white' : '3px solid #22c55e';
+      });
+
+      return next;
+    });
   };
 
   // Trigger search when stop types change
@@ -645,23 +657,31 @@ export function RouteGenerator() {
         )}
 
         {availablePois.length > 0 && (
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <p className="text-[10px] text-muted-foreground">
-              {availablePois.length} found — click markers on map to select ({selectedStopIds.size} selected)
+              {availablePois.length} found · {selectedStopIds.size} selected · tap to toggle
             </p>
-            {selectedStopIds.size > 0 && (
-              <div className="space-y-0.5">
-                {availablePois.filter((p) => selectedStopIds.has(p.id)).map((p) => {
-                  const config = markerConfig[p.type] ?? markerConfig.coffee;
-                  return (
-                    <div key={p.id} className="flex items-center gap-1.5 text-xs bg-green-50 rounded px-2 py-1 border border-green-200">
-                      <span>{config.emoji}</span>
-                      <span className="truncate font-medium">{p.name}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="space-y-0.5 max-h-40 overflow-y-auto">
+              {availablePois.map((p) => {
+                const config = markerConfig[p.type] ?? markerConfig.coffee;
+                const isSelected = selectedStopIds.has(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => togglePoiSelection(p.id)}
+                    className={`flex items-center gap-1.5 w-full text-left text-xs rounded px-2 py-1.5 transition-colors ${
+                      isSelected
+                        ? 'bg-green-50 border border-green-300 font-semibold'
+                        : 'bg-secondary/50 hover:bg-secondary border border-transparent'
+                    }`}
+                  >
+                    <span>{config.emoji}</span>
+                    <span className="truncate flex-1">{p.name}</span>
+                    {isSelected && <span className="text-green-600 text-[10px]">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
