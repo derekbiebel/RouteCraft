@@ -145,6 +145,7 @@ function parseORSResponse(data: {
   const { distance: totalDistance, duration: totalDuration } = feature.properties.summary;
   const elevationGain = feature.properties.ascent ?? 0;
   const elevationLoss = feature.properties.descent ?? 0;
+  console.log('[ORS] Elevation:', { ascent: feature.properties.ascent, descent: feature.properties.descent, elevationGain, elevationLoss });
   const surfaceValues = feature.properties.extras?.surface?.values ?? [];
 
   // Build elevation profile
